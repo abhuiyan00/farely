@@ -1,0 +1,8 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Farely</string>
+    <string name="title_activity_main">Farely</string>
+    <string name="package_name">com.farely.app</string>
+    <string name="custom_url_scheme">com.farely.app</string>
+    <string name="farely_a11y_description">Reads ride-offer details shown on screen (fare, distance) so Farely can score them. Data stays on your device.</string>
+</resources>

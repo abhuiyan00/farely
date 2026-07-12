@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copy to android/app/src/main/res/xml/accessibility_service_config.xml
+  Referenced from AndroidManifest.additions.xml.
+  packageNames limits the service to the target ride apps (privacy + perf).
+-->
+<accessibility-service
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeNotificationStateChanged"
+    android:accessibilityFeedbackType="feedbackGeneric"
+    android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
+    android:canRetrieveWindowContent="true"
+    android:notificationTimeout="100"
+    android:packageNames="ee.mtakso.driver,com.ubercab.driver,taxi.android.driver,com.mytaxi.driver"
+    android:description="@string/farely_a11y_description" />
