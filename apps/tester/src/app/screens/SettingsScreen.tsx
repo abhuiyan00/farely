@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { ShieldCheck, Crosshair, ChevronRight, Activity } from "lucide-react";
-import { useSession, effectiveTier } from "../lib/session";
+import { useSession, effectiveTier, type ApiKeyName } from "../lib/session";
 import { requiredLearned, REQUIRED_ROLES, isPlatformReady } from "../lib/controls";
+import { SIM_SCREENS } from "../lib/vision";
 import { unresolvedCount, DIAG_EVENT } from "../lib/diagStore";
 import {
   effectiveHrBar,
@@ -86,6 +87,22 @@ export default function SettingsScreen({
       />
       <span style={{ fontSize: 11, color: T.ink3, minWidth: 46 }}>{unit}</span>
     </span>
+  );
+
+  const keyField = (name: ApiKeyName, label: string, placeholder: string, help: string) => (
+    <div style={{ padding: "8px 14px 10px" }}>
+      <div style={{ fontSize: 12.5, color: T.ink2, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+      <input
+        type="password"
+        value={state.keys[name] ?? ""}
+        onChange={(e) => dispatch({ type: "SET_KEY", name, value: e.target.value })}
+        placeholder={placeholder}
+        autoComplete="off"
+        spellCheck={false}
+        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.inputBg, color: T.ink, fontSize: 12, fontFamily: MONO, boxSizing: "border-box" }}
+      />
+      <div style={{ fontSize: 10.5, color: T.ink4, marginTop: 3, lineHeight: 1.4 }}>{help}</div>
+    </div>
   );
 
   return (
@@ -211,6 +228,50 @@ export default function SettingsScreen({
           </span>
           <ChevronRight size={18} color={T.ink3} />
         </button>
+      </Card>
+
+      <Card
+        title="Cloud vision & live data"
+        sub="Classify screens Farely doesn't recognize and pull live events — with your own keys, stored on this phone only"
+      >
+        {keyField(
+          "anthropic",
+          "Anthropic API key — screen vision",
+          "sk-ant-…",
+          "Classifies unknown app screens (updates, redesigns). From console.anthropic.com. Note: screen captures are sent to Anthropic to classify them.",
+        )}
+        {keyField(
+          "ticketmaster",
+          "Ticketmaster API key — live events",
+          "consumer key",
+          "Pulls real Wrocław events on open. Free key at developer.ticketmaster.com.",
+        )}
+        {!isNative && (
+          <Row label="Simulate unknown screen" sub="Run the capture → vision → decision → log path" last>
+            <select
+              defaultValue=""
+              aria-label="Simulate an unknown screen"
+              onChange={(e) => {
+                const s = SIM_SCREENS.find((x) => x.key === e.target.value);
+                if (s)
+                  window.dispatchEvent(
+                    new CustomEvent("farely:unknownScreen", { detail: { platform: s.platform, hint: s.hint } }),
+                  );
+                e.currentTarget.value = "";
+              }}
+              style={{ padding: "7px 10px", borderRadius: 999, border: `1px solid ${T.borderStrong}`, background: T.card, color: T.ink, fontSize: 11.5, fontWeight: 700, fontFamily: SANS, cursor: "pointer" }}
+            >
+              <option value="" disabled>
+                Pick a screen…
+              </option>
+              {SIM_SCREENS.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </Row>
+        )}
       </Card>
 
       <Card

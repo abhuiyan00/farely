@@ -33,6 +33,7 @@ import {
 import { upcomingEvents, letOutMs, CROWD_LABEL } from "./lib/events";
 import { withNativeProfile } from "./lib/device";
 import { FarelyBridge, IS_NATIVE } from "./lib/bridge";
+import { classifyScreen, VISION_MODEL } from "./lib/vision";
 import {
   SessionCtx,
   reducer,
@@ -89,7 +90,7 @@ export default function App() {
   // persist profile/targets/platforms/autopilot/perf/learned-controls across restarts
   useEffect(() => {
     persist(state);
-  }, [state.vehicle, state.thresholds, state.installed, state.coord, state.perfMode, state.selectors]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.vehicle, state.thresholds, state.installed, state.coord, state.perfMode, state.selectors, state.keys]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scored = useMemo(
     () => (rawOffer ? scoreOffer(rawOffer, state.vehicle, state.thresholds) : null),
@@ -99,6 +100,8 @@ export default function App() {
   scoredRef.current = scored;
   const positionRef = useRef(state.position);
   positionRef.current = state.position;
+  const keysRef = useRef(state.keys);
+  keysRef.current = state.keys;
 
   const resolve = useCallback((decision: Decision) => {
     const s = scoredRef.current;
@@ -150,6 +153,73 @@ export default function App() {
     window.addEventListener("farely:idcheck", h);
     return () => window.removeEventListener("farely:idcheck", h);
   }, []);
+
+  // ── Cloud-vision unknown-case handler ──────────────────────────────────────
+  // A screen Farely can't place (app update, redesign, promo takeover) → send it
+  // to the vision model, take a decision, and log everything to the diagnostics
+  // DB. An "idCheck" verdict forces the safety freeze; "note" just records it.
+  // Fired by the web "Simulate unknown screen" button and, on device, by the
+  // coordinator emitting `farely:unknownScreen` with a real screenshot.
+  const handleUnknownScreen = useCallback(
+    (cap: { platform?: string; image?: string; hint?: string }) => {
+      logDiag({
+        kind: "unknown-case",
+        severity: "warn",
+        source: "vision",
+        title: `Unrecognized ${cap.platform ?? ""} screen — asking vision`.replace(/\s+/g, " ").trim(),
+        detail: cap.hint,
+        context: { platform: cap.platform, hasImage: !!cap.image },
+      });
+      classifyScreen(
+        { platform: cap.platform, image: cap.image, hint: cap.hint },
+        keysRef.current.anthropic,
+      ).then((res) => {
+        const severity = res.class === "idCheck" ? "critical" : res.error ? "error" : "info";
+        logDiag({
+          kind: "vision",
+          severity,
+          source: "vision",
+          title: `Vision: ${res.class}${res.simulated ? " (simulated)" : ""} → ${res.action}`,
+          detail: res.summary + (res.error ? `\n(${res.error})` : ""),
+          context: {
+            platform: cap.platform,
+            class: res.class,
+            action: res.action,
+            confidence: res.confidence,
+            controls: res.controls,
+            model: res.simulated ? "mock" : VISION_MODEL,
+          },
+        });
+        if (res.action === "freeze" && cap.platform) {
+          lastIdCheckRef.current = Date.now();
+          dispatch({ type: "ID_CHECK_START", platform: cap.platform as Platform });
+        } else if (res.action === "note") {
+          dispatch({
+            type: "NOTIFY",
+            kind: "system",
+            title: `${cap.platform ?? "App"}: ${res.class === "appUpdate" ? "update screen" : "unrecognized screen"}`,
+            body: res.summary,
+          });
+        }
+      });
+    },
+    [dispatch],
+  );
+
+  useEffect(() => {
+    const h = (e: Event) => handleUnknownScreen((e as CustomEvent).detail);
+    window.addEventListener("farely:unknownScreen", h);
+    return () => window.removeEventListener("farely:unknownScreen", h);
+  }, [handleUnknownScreen]);
+
+  useEffect(() => {
+    if (!IS_NATIVE) return;
+    let handle: PluginListenerHandle | undefined;
+    FarelyBridge.addListener("farely:unknownScreen", (d) => handleUnknownScreen(d)).then((h) => {
+      handle = h;
+    });
+    return () => handle?.remove();
+  }, [handleUnknownScreen]);
 
   // Global error capture → the diagnostics DB (Farely's black box).
   useEffect(() => {

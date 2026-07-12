@@ -19,6 +19,15 @@ class FarelyAccessibilityService : AccessibilityService() {
         private const val TAG = "FarelyA11y"
         private const val DEBOUNCE_MS = 300L
         private const val DEDUP_WINDOW_MS = 30_000L
+        private const val UNKNOWN_MIN_GAP_MS = 5 * 60_000L
+        // Cheap gate: only spend a cloud-vision call on screens that plausibly need
+        // a decision (updates / promos / consent) — never the map, menus or lists.
+        // Deliberately excludes verification/selfie terms: identity checks are
+        // detected on-device by the coordinator and NEVER routed to cloud vision.
+        private val NOVELTY_HINTS = listOf(
+            "update", "aktualiz", "zaktualizuj", "version", "wersj", "what's new", "nowość",
+            "install", "zainstaluj", "continue", "kontynuuj", "accept terms", "regulamin",
+        )
 
         val TARGET_PACKAGES = mapOf(
             "ee.mtakso.driver" to "Bolt",
@@ -36,6 +45,8 @@ class FarelyAccessibilityService : AccessibilityService() {
     private var pending: Runnable? = null
     private var lastHash: Int = 0
     private var lastEmitAt: Long = 0L
+    private var lastWasStateChange = false
+    private val unknownLastAt = HashMap<String, Long>()
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         event ?: return
@@ -47,6 +58,7 @@ class FarelyAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_NOTIFICATION_STATE_CHANGED -> Unit
             else -> return
         }
+        lastWasStateChange = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
 
         // Debounce bursts of content-changed events; process the latest.
         pending?.let(main::removeCallbacks)
@@ -77,6 +89,7 @@ class FarelyAccessibilityService : AccessibilityService() {
 
         if (!OfferNodeParser.looksLikeOffer(root)) {
             OverlayController.hide() // offer card gone → drop the bubble
+            maybeEmitUnknown(platform, root) // novel non-offer screen → cloud vision
             return
         }
 
@@ -126,6 +139,89 @@ class FarelyAccessibilityService : AccessibilityService() {
         }
         walk(root)
         return platform to out
+    }
+
+    /** The target-app platform currently in the foreground, if any. */
+    fun foregroundPlatform(): String? =
+        TARGET_PACKAGES[rootInActiveWindow?.packageName?.toString()]
+
+    /**
+     * A screen Farely couldn't place (not an offer, not a trip/ID-check the
+     * coordinator handles). On a genuinely new screen whose text hints it may need
+     * a decision, grab a screenshot and hand it to the WebView's vision classifier
+     * (`farely:unknownScreen`). Hard-throttled per platform to bound vision calls.
+     */
+    private fun maybeEmitUnknown(platform: String, root: android.view.accessibility.AccessibilityNodeInfo) {
+        if (!lastWasStateChange) return
+        if (MultiAppCoordinator.frozen) return
+        val now = System.currentTimeMillis()
+        if (now - (unknownLastAt[platform] ?: 0L) < UNKNOWN_MIN_GAP_MS) return
+        val hint = flatTextHint(root)
+        if (NOVELTY_HINTS.none { hint.contains(it, ignoreCase = true) }) return
+        unknownLastAt[platform] = now
+        captureScreenB64 { b64 -> FarelyBridgePlugin.emitUnknownScreen(platform, b64, hint) }
+    }
+
+    /** First handful of visible strings, joined — a cheap text summary of a screen. */
+    private fun flatTextHint(root: android.view.accessibility.AccessibilityNodeInfo): String {
+        val parts = ArrayList<String>()
+        fun walk(n: android.view.accessibility.AccessibilityNodeInfo?) {
+            n ?: return
+            if (parts.size >= 16) return
+            (n.text?.toString() ?: n.contentDescription?.toString())
+                ?.trim()?.takeIf { it.isNotBlank() }?.let { parts.add(it) }
+            for (i in 0 until n.childCount) walk(n.getChild(i))
+        }
+        walk(root)
+        return parts.joinToString(" · ").take(600)
+    }
+
+    /**
+     * Screenshot the foreground app as a downscaled base64 PNG for the vision
+     * classifier. API 30+ only; calls back null on older devices or on failure.
+     * Read-only — it captures pixels, never taps.
+     */
+    fun captureScreenB64(onResult: (String?) -> Unit) {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) {
+            onResult(null)
+            return
+        }
+        try {
+            takeScreenshot(
+                android.view.Display.DEFAULT_DISPLAY,
+                mainExecutor,
+                object : AccessibilityService.TakeScreenshotCallback {
+                    override fun onSuccess(result: AccessibilityService.ScreenshotResult) {
+                        val b64 = try {
+                            val hw = result.hardwareBuffer
+                            val bmp = android.graphics.Bitmap.wrapHardwareBuffer(hw, result.colorSpace)
+                            hw.close()
+                            bmp?.let { encodeScaledPng(it) }
+                        } catch (t: Throwable) {
+                            null
+                        }
+                        onResult(b64)
+                    }
+
+                    override fun onFailure(errorCode: Int) = onResult(null)
+                },
+            )
+        } catch (t: Throwable) {
+            onResult(null)
+        }
+    }
+
+    private fun encodeScaledPng(src: android.graphics.Bitmap): String {
+        val soft = if (src.config == android.graphics.Bitmap.Config.HARDWARE)
+            src.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else src
+        val maxW = 820
+        val scaled = if (soft.width > maxW) {
+            val h = (soft.height.toLong() * maxW / soft.width).toInt().coerceAtLeast(1)
+            android.graphics.Bitmap.createScaledBitmap(soft, maxW, h, true)
+        } else soft
+        val stream = java.io.ByteArrayOutputStream()
+        scaled.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, stream)
+        return android.util.Base64.encodeToString(stream.toByteArray(), android.util.Base64.NO_WRAP)
     }
 
     override fun onInterrupt() { pending?.let(main::removeCallbacks) }

@@ -36,6 +36,9 @@ import {
 
 export type Decision = "accept" | "decline" | "expired";
 
+/** User-supplied third-party API keys (stored on-device only). */
+export type ApiKeyName = "anthropic" | "ticketmaster";
+
 export interface LogEntry {
   scored: ScoredOffer;
   decision: Decision;
@@ -94,6 +97,8 @@ export interface SessionState {
   device: DeviceProfile; // what detection concluded
   // learned per-app control selectors (Learn-controls) → drives the coordinator
   selectors: SelectorProfile;
+  // user-supplied API keys (cloud vision + live events); on-device only
+  keys: Partial<Record<ApiKeyName, string>>;
 }
 
 export type Action =
@@ -107,6 +112,7 @@ export type Action =
   | { type: "SET_DEVICE"; device: DeviceProfile }
   | { type: "SET_SELECTOR"; platform: Platform; role: ControlRole; selector: Selector }
   | { type: "CLEAR_SELECTOR"; platform: Platform; role: ControlRole }
+  | { type: "SET_KEY"; name: ApiKeyName; value: string }
   | { type: "NOTIFY"; kind: NoticeKind; title: string; body?: string }
   | { type: "NOTICES_SEEN" }
   | { type: "CLEAR_NOTICES" }
@@ -129,6 +135,7 @@ interface Persisted {
   coord?: CoordSettings;
   perfMode?: PerfMode;
   selectors?: SelectorProfile;
+  keys?: Partial<Record<ApiKeyName, string>>;
 }
 
 function load(): Partial<Persisted> {
@@ -149,6 +156,7 @@ export function persist(state: SessionState) {
       coord: state.coord,
       perfMode: state.perfMode,
       selectors: state.selectors,
+      keys: state.keys,
     };
     localStorage.setItem(PERSIST_KEY, JSON.stringify(p));
   } catch {
@@ -175,6 +183,7 @@ export function initialState(): SessionState {
     perfMode: saved.perfMode ?? "auto",
     device: detectDevice(),
     selectors: saved.selectors ?? {},
+    keys: saved.keys ?? {},
   };
 }
 
@@ -258,6 +267,8 @@ export function reducer(state: SessionState, action: Action): SessionState {
         ...state,
         selectors: clearSelector(state.selectors, action.platform, action.role),
       };
+    case "SET_KEY":
+      return { ...state, keys: { ...state.keys, [action.name]: action.value } };
     case "NOTIFY":
       return pushNotices(state, [makeNotice(action.kind, action.title, action.body)]);
     case "NOTICES_SEEN":

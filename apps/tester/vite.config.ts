@@ -42,6 +42,19 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/fe-api/, ''),
       },
+      // Cloud-vision classifier (Anthropic Messages API) — proxied in dev to
+      // dodge CORS; on Android the app calls it natively via CapacitorHttp.
+      '/anthropic': {
+        target: 'https://api.anthropic.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/anthropic/, ''),
+      },
+      // Live events (Ticketmaster Discovery API), same dev-proxy pattern.
+      '/tm-api': {
+        target: 'https://app.ticketmaster.com',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/tm-api/, ''),
+      },
     },
   },
 

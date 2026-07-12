@@ -73,8 +73,12 @@ pillars, all running on the same real cost engine (`src/app/lib/engine.ts`):
 - **Invisible until needed.** Event-triggered, near-zero device load. It wakes on
   an offer, speaks, and disappears. It never competes with the driving apps for
   battery or attention.
-- **My data, my phone.** Everything on-device. No servers, no accounts, no
-  telemetry. Nothing about my earnings or screen leaves the phone.
+- **My data, my phone.** On-device by default: no servers, no accounts, no
+  telemetry; my earnings and normal operation never leave the phone. The one
+  owner-chosen exception is the **cloud-vision classifier** (§6): when Farely hits
+  a screen it can't recognize, it sends *that* capture to a vision model (my own
+  API key) to work out what it is. A deliberate trade-off I switched on — not a
+  default — and one that is never applied to an identity-check screen.
 
 ## 5. What success looks like
 
@@ -112,8 +116,20 @@ pillars, all running on the same real cost engine (`src/app/lib/engine.ts`):
   online/offline toggle + "Stop new requests" — controls the driver *teaches* it
   once on-device (Learn-controls), matched by view-id first so it taps the right
   button instead of guessing a label.
+- ✅ **Cloud-vision unknown-case handling is in scope** (added 2026-07-13, at the
+  driver's request; uses the driver's own API key). When Farely meets a screen its
+  on-device heuristics + learned selectors can't place — an app update, a redesign,
+  a promo takeover — it captures the screen, sends it to a vision model to classify,
+  takes a decision, and records the whole case in the diagnostics DB for later
+  tuning. This is a deliberate, documented departure from "nothing leaves the
+  phone": a screen capture leaves the device **only** for this classifier, and only
+  for screens that pass a cheap on-device novelty gate. The hard boundaries are
+  unchanged — it never proposes tapping a ride offer's Accept, and **identity/face
+  checks are detected on-device and never routed to the cloud** (a vision verdict of
+  "idCheck" only ever triggers the freeze). Every case is auditable in Diagnostics.
 - ❌ Never between the driver and an **identity check**. When a platform asks for
-  a face photo, all automation freezes and the overlay hides until it's done.
+  a face photo, all automation freezes and the overlay hides until it's done —
+  and that screen is never sent to the cloud-vision classifier.
 
 ## 7. Known tension to hold
 

@@ -27,6 +27,10 @@ export interface FarelyBridgePlugin {
     event: "farely:controlDump",
     cb: (data: ScreenDump) => void,
   ): Promise<PluginListenerHandle>;
+  addListener(
+    event: "farely:unknownScreen",
+    cb: (data: { platform?: string; image?: string; hint?: string }) => void,
+  ): Promise<PluginListenerHandle>;
   showOverlay(opts: {
     verdict: string;
     net: number;
@@ -63,6 +67,14 @@ export interface FarelyBridgePlugin {
   dumpControls(): Promise<{ ok: boolean; platform?: string; count?: number }>;
   /** Push the learned per-app control selectors down to MultiAppCoordinator.kt. */
   configureSelectors(profile: SelectorProfile): Promise<void>;
+  /**
+   * Capture a PNG screenshot of the foreground app for the cloud-vision
+   * classifier (AccessibilityService.takeScreenshot, API 30+). Resolves with a
+   * base64 PNG (no data: prefix). The coordinator also emits a
+   * `farely:unknownScreen` event on its own when it hits a screen it can't
+   * classify, carrying the capture so the WebView can run the vision call.
+   */
+  captureScreen(): Promise<{ ok: boolean; platform?: string; image?: string }>;
 }
 
 export const FarelyBridge = registerPlugin<FarelyBridgePlugin>("FarelyBridge");

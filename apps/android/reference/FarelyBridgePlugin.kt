@@ -27,6 +27,8 @@ import com.getcapacitor.annotation.CapacitorPlugin
  *   FarelyBridge.addListener("farely:controlDump", cb)   // Learn-controls node tree
  *   FarelyBridge.dumpControls() → { ok, platform, count } (tree arrives on the event)
  *   FarelyBridge.configureSelectors({ Uber: { offline: {viewId, text}, ... }, ... })
+ *   FarelyBridge.captureScreen() → { ok, platform, image }   // cloud-vision screenshot
+ *   FarelyBridge.addListener("farely:unknownScreen", cb)      // unclassified screen + shot
  */
 @CapacitorPlugin(name = "FarelyBridge")
 class FarelyBridgePlugin : Plugin() {
@@ -171,6 +173,26 @@ class FarelyBridgePlugin : Plugin() {
         call.resolve()
     }
 
+    /**
+     * Capture a base64 PNG screenshot of the foreground app for the cloud-vision
+     * classifier (API 30+). Async — resolves once the screenshot is encoded.
+     */
+    @PluginMethod
+    fun captureScreen(call: PluginCall) {
+        val service = FarelyAccessibilityService.instance
+        if (service == null) {
+            call.resolve(JSObject().put("ok", false))
+            return
+        }
+        val platform = service.foregroundPlatform()
+        service.captureScreenB64 { b64 ->
+            val res = JSObject().put("ok", b64 != null)
+            platform?.let { res.put("platform", it) }
+            b64?.let { res.put("image", it) }
+            call.resolve(res)
+        }
+    }
+
     companion object {
         @Volatile private var active: FarelyBridgePlugin? = null
 
@@ -214,6 +236,15 @@ class FarelyBridgePlugin : Plugin() {
                 .put("source", "device")
                 .put("nodes", arr)
             plugin.notifyListeners("farely:controlDump", payload)
+        }
+
+        /** Service → JS: a screen Farely couldn't classify (+ optional screenshot). */
+        fun emitUnknownScreen(platform: String, image: String?, hint: String?) {
+            val plugin = active ?: return
+            val payload = JSObject().put("platform", platform)
+            image?.let { payload.put("image", it) }
+            hint?.let { payload.put("hint", it) }
+            plugin.notifyListeners("farely:unknownScreen", payload)
         }
     }
 }
