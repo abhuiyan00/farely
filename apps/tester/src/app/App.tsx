@@ -49,7 +49,9 @@ import CarScreen from "./screens/CarScreen";
 import EventsScreen from "./screens/EventsScreen";
 import SettingsScreen from "./screens/SettingsScreen";
 import LearnControlsScreen from "./screens/LearnControlsScreen";
+import DiagnosticsScreen from "./screens/DiagnosticsScreen";
 import IdCheckOverlay from "./screens/IdCheckOverlay";
+import { logDiag } from "./lib/diagStore";
 
 const SIM_OFFER_SECONDS = 18;
 const NATIVE_OFFER_SECONDS = 25;
@@ -57,7 +59,7 @@ const ID_CHECK_CHANCE = 0.12; // sim: platforms re-verify occasionally
 const ID_CHECK_MIN_GAP_MS = 3 * 60_000;
 
 type Phase = "incoming" | "offer" | "trip" | "result";
-type Screen = "home" | "rides" | "events" | "car" | "settings" | "learn";
+type Screen = "home" | "rides" | "events" | "car" | "settings" | "learn" | "diag";
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>("home");
@@ -100,7 +102,26 @@ export default function App() {
 
   const resolve = useCallback((decision: Decision) => {
     const s = scoredRef.current;
-    if (s) dispatch({ type: "DECIDE", scored: s, decision });
+    if (s) {
+      dispatch({ type: "DECIDE", scored: s, decision });
+      // Every decision is a row in the black box (diagnostics DB) to dissect later.
+      logDiag({
+        kind: "decision",
+        severity: decision === "expired" ? "warn" : "info",
+        source: "engine",
+        title: `${decision.toUpperCase()} — ${s.verdict} ${s.platform} · ${money(s.net)} net`,
+        detail: s.reason,
+        context: {
+          platform: s.platform,
+          decision,
+          verdict: s.verdict,
+          netZl: Math.round(s.net * 100) / 100,
+          perHr: Math.round(s.perHr),
+          perKm: Math.round(s.perKm * 100) / 100,
+          tripMin: s.tripMin,
+        },
+      });
+    }
     setLastDecision(decision);
     if (decision === "accept" && s) {
       // Drive the order to completion: ~0.35 s per trip-minute, 5–12 s on web.
@@ -128,6 +149,34 @@ export default function App() {
     };
     window.addEventListener("farely:idcheck", h);
     return () => window.removeEventListener("farely:idcheck", h);
+  }, []);
+
+  // Global error capture → the diagnostics DB (Farely's black box).
+  useEffect(() => {
+    const onErr = (e: ErrorEvent) =>
+      logDiag({
+        kind: "exception",
+        severity: "error",
+        source: "window.onerror",
+        title: e.message || "Uncaught error",
+        detail: e.error?.stack ?? (e.filename ? `${e.filename}:${e.lineno}:${e.colno}` : undefined),
+      });
+    const onRej = (e: PromiseRejectionEvent) => {
+      const r = e.reason as { message?: string; stack?: string } | undefined;
+      logDiag({
+        kind: "exception",
+        severity: "error",
+        source: "unhandledrejection",
+        title: r?.message || String(r) || "Unhandled promise rejection",
+        detail: r?.stack,
+      });
+    };
+    window.addEventListener("error", onErr);
+    window.addEventListener("unhandledrejection", onRej);
+    return () => {
+      window.removeEventListener("error", onErr);
+      window.removeEventListener("unhandledrejection", onRej);
+    };
   }, []);
 
   // Native: real captured offers replace the simulator entirely.
@@ -460,9 +509,15 @@ export default function App() {
         {screen === "events" && <EventsScreen />}
         {screen === "car" && <CarScreen />}
         {screen === "settings" && (
-          <SettingsScreen captureOn={captureOn} isNative={IS_NATIVE} onOpenLearn={() => setScreen("learn")} />
+          <SettingsScreen
+            captureOn={captureOn}
+            isNative={IS_NATIVE}
+            onOpenLearn={() => setScreen("learn")}
+            onOpenDiag={() => setScreen("diag")}
+          />
         )}
         {screen === "learn" && <LearnControlsScreen onClose={() => setScreen("settings")} />}
+        {screen === "diag" && <DiagnosticsScreen onClose={() => setScreen("settings")} />}
 
         {/* full-screen offer */}
         {phase === "offer" && scored && !state.idCheck && (

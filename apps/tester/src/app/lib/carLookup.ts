@@ -9,6 +9,7 @@
 // in `npm run dev` it rides the Vite proxy at /fe-api (see vite.config.ts).
 
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
+import { logDiag } from "./diagStore";
 
 export type FuelKind = "petrol" | "diesel" | "hybrid" | "phev" | "ev" | "lpg";
 
@@ -327,10 +328,16 @@ export async function searchCars(query: string, year: number): Promise<CarSearch
     ];
     return { specs: merged, remoteError: null };
   } catch (e) {
-    return {
-      specs: local,
-      remoteError: e instanceof Error ? e.message : "network error",
-    };
+    const msg = e instanceof Error ? e.message : "network error";
+    logDiag({
+      kind: "network",
+      severity: "warn",
+      source: "carLookup",
+      title: `Car spec lookup failed — ${msg}`,
+      detail: `fueleconomy.gov unreachable; showing built-in results for "${query}"`,
+      context: { query, year },
+    });
+    return { specs: local, remoteError: msg };
   }
 }
 

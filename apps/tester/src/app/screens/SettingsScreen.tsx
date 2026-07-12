@@ -1,8 +1,10 @@
 // ─── Settings: targets, autopilot, platforms, performance, capture ────────────
 
-import { ShieldCheck, Crosshair, ChevronRight } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ShieldCheck, Crosshair, ChevronRight, Activity } from "lucide-react";
 import { useSession, effectiveTier } from "../lib/session";
 import { requiredLearned, REQUIRED_ROLES, isPlatformReady } from "../lib/controls";
+import { unresolvedCount, DIAG_EVENT } from "../lib/diagStore";
 import {
   effectiveHrBar,
   effectiveKmBar,
@@ -54,13 +56,23 @@ export default function SettingsScreen({
   captureOn,
   isNative,
   onOpenLearn,
+  onOpenDiag,
 }: {
   captureOn: boolean;
   isNative: boolean;
   onOpenLearn: () => void;
+  onOpenDiag: () => void;
 }) {
   const { state, dispatch } = useSession();
   const t = state.thresholds;
+
+  const [openCases, setOpenCases] = useState(0);
+  useEffect(() => {
+    const refresh = () => unresolvedCount().then(setOpenCases);
+    refresh();
+    window.addEventListener(DIAG_EVENT, refresh);
+    return () => window.removeEventListener(DIAG_EVENT, refresh);
+  }, []);
 
   const num = (value: number, step: number, unit: string, onChange: (n: number) => void) => (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
@@ -196,6 +208,26 @@ export default function SettingsScreen({
         >
           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: T.ink }}>
             <Crosshair size={16} /> Learn app controls
+          </span>
+          <ChevronRight size={18} color={T.ink3} />
+        </button>
+      </Card>
+
+      <Card
+        title="Diagnostics & cases"
+        sub="Farely's black box — errors, decisions, unknown screens and vision verdicts to dissect later"
+      >
+        <Row label="Open cases" sub="Unresolved events waiting for a tuning pass">
+          <span style={{ fontFamily: MONO, fontSize: 12, fontWeight: 700, color: openCases ? T.marginal : T.green }}>
+            {openCases}
+          </span>
+        </Row>
+        <button
+          onClick={onOpenDiag}
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, width: "100%", padding: "11px 14px", border: "none", borderTop: `1px solid ${T.border}`, background: "transparent", cursor: "pointer", fontFamily: SANS }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 13, fontWeight: 700, color: T.ink }}>
+            <Activity size={16} /> Review diagnostics
           </span>
           <ChevronRight size={18} color={T.ink3} />
         </button>
