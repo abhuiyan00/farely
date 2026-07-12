@@ -1,0 +1,19 @@
+{
+  "name": "@farely/android",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Farely Android APK — Capacitor host that wraps the @farely/tester web build and adds the native accessibility capture, verdict overlay, multi-app coordinator, and cloud-vision bridge.",
+  "scripts": {
+    "sync": "cap sync android",
+    "copy": "cap copy android",
+    "open": "cap open android",
+    "apk": "cap copy android && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "7.6.7",
+    "@capacitor/core": "7.6.7"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "7.6.7"
+  }
+}
