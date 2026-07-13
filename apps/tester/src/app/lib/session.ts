@@ -33,6 +33,7 @@ import {
   type Selector,
   type SelectorProfile,
 } from "./controls";
+import type { VenueEvent } from "./events";
 
 export type Decision = "accept" | "decline" | "expired";
 
@@ -99,6 +100,9 @@ export interface SessionState {
   selectors: SelectorProfile;
   // user-supplied API keys (cloud vision + live events); on-device only
   keys: Partial<Record<ApiKeyName, string>>;
+  // live events pulled from the web on open (cached); merged into the calendar
+  liveEvents: VenueEvent[];
+  eventsFetchedAt: number | null;
 }
 
 export type Action =
@@ -113,6 +117,7 @@ export type Action =
   | { type: "SET_SELECTOR"; platform: Platform; role: ControlRole; selector: Selector }
   | { type: "CLEAR_SELECTOR"; platform: Platform; role: ControlRole }
   | { type: "SET_KEY"; name: ApiKeyName; value: string }
+  | { type: "SET_LIVE_EVENTS"; events: VenueEvent[] }
   | { type: "NOTIFY"; kind: NoticeKind; title: string; body?: string }
   | { type: "NOTICES_SEEN" }
   | { type: "CLEAR_NOTICES" }
@@ -136,6 +141,8 @@ interface Persisted {
   perfMode?: PerfMode;
   selectors?: SelectorProfile;
   keys?: Partial<Record<ApiKeyName, string>>;
+  liveEvents?: VenueEvent[];
+  eventsFetchedAt?: number | null;
 }
 
 function load(): Partial<Persisted> {
@@ -157,6 +164,8 @@ export function persist(state: SessionState) {
       perfMode: state.perfMode,
       selectors: state.selectors,
       keys: state.keys,
+      liveEvents: state.liveEvents,
+      eventsFetchedAt: state.eventsFetchedAt,
     };
     localStorage.setItem(PERSIST_KEY, JSON.stringify(p));
   } catch {
@@ -184,6 +193,8 @@ export function initialState(): SessionState {
     device: detectDevice(),
     selectors: saved.selectors ?? {},
     keys: saved.keys ?? {},
+    liveEvents: saved.liveEvents ?? [],
+    eventsFetchedAt: saved.eventsFetchedAt ?? null,
   };
 }
 
@@ -269,6 +280,8 @@ export function reducer(state: SessionState, action: Action): SessionState {
       };
     case "SET_KEY":
       return { ...state, keys: { ...state.keys, [action.name]: action.value } };
+    case "SET_LIVE_EVENTS":
+      return { ...state, liveEvents: action.events, eventsFetchedAt: Date.now() };
     case "NOTIFY":
       return pushNotices(state, [makeNotice(action.kind, action.title, action.body)]);
     case "NOTICES_SEEN":

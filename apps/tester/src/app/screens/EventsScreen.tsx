@@ -6,7 +6,7 @@
 // window to the phone's calendar (.ics on web, calendar insert on Android).
 
 import { useMemo, useState } from "react";
-import { CalendarDays, CalendarPlus, MapPin, BadgeCheck } from "lucide-react";
+import { CalendarDays, CalendarPlus, MapPin, BadgeCheck, RefreshCw, Radio } from "lucide-react";
 import {
   upcomingEvents,
   letOutMs,
@@ -17,8 +17,10 @@ import {
   CROWD_LABEL,
   type VenueEvent,
 } from "../lib/events";
+import { fetchLiveEvents } from "../lib/liveEvents";
 import { roadKm, effectiveHrBar, money } from "../lib/engine";
 import { useSession } from "../lib/session";
+import { logDiag } from "../lib/diagStore";
 import { FarelyBridge, IS_NATIVE } from "../lib/bridge";
 import { T, MONO, SANS } from "../lib/theme";
 
@@ -57,7 +59,33 @@ export default function EventsScreen() {
   const { state, dispatch } = useSession();
   const target = effectiveHrBar(state.thresholds);
   const now = useMemo(() => new Date(), []);
-  const events = useMemo(() => upcomingEvents(now, 10), [now]);
+  const events = useMemo(() => upcomingEvents(now, 10, state.liveEvents), [now, state.liveEvents]);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const liveCount = state.liveEvents.length;
+  const hasKey = !!state.keys.ticketmaster;
+
+  const refresh = () => {
+    setRefreshing(true);
+    fetchLiveEvents(state.keys.ticketmaster).then(({ events: ev, error }) => {
+      setRefreshing(false);
+      if (ev.length) {
+        dispatch({ type: "SET_LIVE_EVENTS", events: ev });
+        logDiag({ kind: "events", severity: "info", source: "EventsScreen", title: `Refreshed ${ev.length} live events`, context: { count: ev.length } });
+      } else {
+        dispatch({
+          type: "NOTIFY",
+          kind: "event",
+          title: hasKey ? "No new live events" : "Add a Ticketmaster key",
+          body: hasKey
+            ? error ?? "Nothing returned right now."
+            : "Settings → Cloud vision & live data — add a free key to pull live Wrocław events.",
+        });
+        if (error && error !== "no Ticketmaster API key")
+          logDiag({ kind: "network", severity: "warn", source: "EventsScreen", title: `Live events refresh failed — ${error}`, context: { error } });
+      }
+    });
+  };
 
   const days = useMemo(() => {
     const out: { key: string; ms: number }[] = [];
@@ -95,35 +123,42 @@ export default function EventsScreen() {
   return (
     <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: T.bg, fontFamily: SANS }}>
       <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 16px) 16px 10px", display: "flex", alignItems: "flex-start" }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 22, fontWeight: 800, color: T.ink }}>Events</div>
           <div style={{ fontSize: 12, color: T.ink2, marginTop: 2 }}>
             Venue let-outs = ride waves you can be early for
           </div>
+          <div style={{ fontSize: 10.5, color: T.ink3, marginTop: 3, display: "flex", alignItems: "center", gap: 5 }}>
+            {liveCount > 0 ? (
+              <>
+                <Radio size={11} color={T.green} /> {liveCount} live · updated {state.eventsFetchedAt ? hhmm(state.eventsFetchedAt) : "—"}
+              </>
+            ) : hasKey ? (
+              "No live events cached — tap refresh"
+            ) : (
+              "Seeded + typical schedule · add a Ticketmaster key for live"
+            )}
+          </div>
         </div>
-        {IS_NATIVE ? null : (
+        <div style={{ marginLeft: "auto", display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end", flexShrink: 0 }}>
           <button
-            onClick={exportDay}
-            disabled={dayEvents.length === 0}
-            style={{
-              marginLeft: "auto",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "8px 13px",
-              borderRadius: 999,
-              border: "none",
-              cursor: dayEvents.length === 0 ? "default" : "pointer",
-              background: dayEvents.length === 0 ? T.inputBg : T.black,
-              color: dayEvents.length === 0 ? T.ink4 : "#fff",
-              fontSize: 12,
-              fontWeight: 700,
-              fontFamily: SANS,
-            }}
+            onClick={refresh}
+            disabled={refreshing}
+            aria-label="Refresh live events"
+            style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 999, border: `1px solid ${T.borderStrong}`, cursor: refreshing ? "default" : "pointer", background: T.card, color: T.ink, fontSize: 12, fontWeight: 700, fontFamily: SANS, opacity: refreshing ? 0.6 : 1 }}
           >
-            <CalendarDays size={14} /> Export day
+            <RefreshCw size={14} /> {refreshing ? "…" : "Refresh"}
           </button>
-        )}
+          {!IS_NATIVE && (
+            <button
+              onClick={exportDay}
+              disabled={dayEvents.length === 0}
+              style={{ display: "flex", alignItems: "center", gap: 6, padding: "8px 13px", borderRadius: 999, border: "none", cursor: dayEvents.length === 0 ? "default" : "pointer", background: dayEvents.length === 0 ? T.inputBg : T.black, color: dayEvents.length === 0 ? T.ink4 : "#fff", fontSize: 12, fontWeight: 700, fontFamily: SANS }}
+            >
+              <CalendarDays size={14} /> Export day
+            </button>
+          )}
+        </div>
       </div>
 
       {/* day strip */}
@@ -179,11 +214,22 @@ export default function EventsScreen() {
                   <span style={{ fontSize: 13.5, fontWeight: 700, color: T.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {e.title}
                   </span>
-                  {e.verified && (
-                    <span title="Published listing" style={{ display: "inline-flex", alignItems: "center", gap: 3, color: T.blue, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
-                      <BadgeCheck size={12} /> listed
-                    </span>
-                  )}
+                  {(() => {
+                    const src = e.source ?? (e.verified ? "listing" : "typical");
+                    if (src === "live")
+                      return (
+                        <span title="Live from Ticketmaster" style={{ display: "inline-flex", alignItems: "center", gap: 3, color: T.green, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                          <Radio size={11} /> live
+                        </span>
+                      );
+                    if (src === "listing")
+                      return (
+                        <span title="Published listing" style={{ display: "inline-flex", alignItems: "center", gap: 3, color: T.blue, fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+                          <BadgeCheck size={12} /> listed
+                        </span>
+                      );
+                    return null;
+                  })()}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: T.ink2, marginTop: 3 }}>
                   <MapPin size={12} />
@@ -239,8 +285,8 @@ export default function EventsScreen() {
       )}
 
       <div style={{ textAlign: "center", padding: "0 24px 20px", fontSize: 10.5, color: T.ink4 }}>
-        “listed” = published venue/Songkick listing · others follow the venue's typical schedule.
-        Net zł/h estimate = zone rate at let-out × crowd size vs your {money(target)}/h target.
+        “live” = pulled from Ticketmaster on open · “listed” = seeded published listing · the rest follow the
+        venue's typical schedule. Net zł/h = zone rate at let-out × crowd size vs your {money(target)}/h target.
       </div>
     </div>
   );

@@ -43,6 +43,9 @@ const byId = Object.fromEntries(VENUES.map((v) => [v.id, v]));
 
 export type EventKind = "concert" | "opera" | "family" | "sport" | "festival";
 
+/** Where an event came from: live web feed, seeded published listing, or the venue's typical pattern. */
+export type EventSource = "live" | "listing" | "typical";
+
 export interface VenueEvent {
   id: string;
   venue: Venue;
@@ -54,6 +57,8 @@ export interface VenueEvent {
   kind: EventKind;
   /** True when this is a real published listing, not the venue's typical pattern. */
   verified: boolean;
+  /** Provenance for the UI badge; filled in by upcomingEvents / the live fetch. */
+  source?: EventSource;
 }
 
 export const letOutMs = (e: VenueEvent) => e.startMs + e.durationMin * 60_000;
@@ -159,22 +164,31 @@ function recurringFor(day: Date): VenueEvent[] {
  * Every event whose let-out falls inside [now − 1h, now + days]. Verified
  * listings first when they collide with a typical slot at the same venue.
  */
-export function upcomingEvents(now: Date, days = 14): VenueEvent[] {
+/** Two events at the same venue within 6 h are treated as the same show. */
+const sameShow = (list: VenueEvent[], e: VenueEvent) =>
+  list.some((r) => r.venue.id === e.venue.id && Math.abs(r.startMs - e.startMs) < 6 * 3_600_000);
+
+/**
+ * Every event whose let-out falls inside [now − 1h, now + days], merged by
+ * provenance: live (Ticketmaster) wins over a seeded listing, which wins over the
+ * venue's typical pattern — so a real announcement always replaces a guess.
+ */
+export function upcomingEvents(now: Date, days = 14, live: VenueEvent[] = []): VenueEvent[] {
   const from = now.getTime() - 3_600_000;
   const to = now.getTime() + days * 86_400_000;
+  const inWindow = (e: VenueEvent) => letOutMs(e) >= from && e.startMs <= to;
 
-  const real = REAL_EVENTS.map((e) => ({ ...e, venue: byId[REAL_VENUE[e.id]] }));
-  const out: VenueEvent[] = real.filter((e) => letOutMs(e) >= from && e.startMs <= to);
+  const out: VenueEvent[] = live.filter(inWindow).map((e) => ({ ...e, source: "live" as const }));
+
+  const listings = REAL_EVENTS.map((e) => ({ ...e, venue: byId[REAL_VENUE[e.id]], source: "listing" as const }));
+  for (const e of listings) {
+    if (inWindow(e) && !sameShow(out, e)) out.push(e);
+  }
 
   for (let i = 0; i <= days; i++) {
     const day = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i);
     for (const e of recurringFor(day)) {
-      if (letOutMs(e) < from || e.startMs > to) continue;
-      // A verified listing at the same venue that evening replaces the pattern slot.
-      const clash = out.some(
-        (r) => r.verified && r.venue.id === e.venue.id && Math.abs(r.startMs - e.startMs) < 6 * 3_600_000,
-      );
-      if (!clash) out.push(e);
+      if (inWindow(e) && !sameShow(out, e)) out.push({ ...e, source: "typical" as const });
     }
   }
 

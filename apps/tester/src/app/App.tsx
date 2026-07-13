@@ -31,6 +31,7 @@ import {
   type Platform,
 } from "./lib/engine";
 import { upcomingEvents, letOutMs, CROWD_LABEL } from "./lib/events";
+import { fetchLiveEvents } from "./lib/liveEvents";
 import { withNativeProfile } from "./lib/device";
 import { FarelyBridge, IS_NATIVE } from "./lib/bridge";
 import { classifyScreen, VISION_MODEL } from "./lib/vision";
@@ -90,7 +91,38 @@ export default function App() {
   // persist profile/targets/platforms/autopilot/perf/learned-controls across restarts
   useEffect(() => {
     persist(state);
-  }, [state.vehicle, state.thresholds, state.installed, state.coord, state.perfMode, state.selectors, state.keys]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.vehicle, state.thresholds, state.installed, state.coord, state.perfMode, state.selectors, state.keys, state.liveEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // On open (and whenever the Ticketmaster key changes): pull the latest Wrocław
+  // events off the web and merge them into the calendar. Fails soft to the seed.
+  useEffect(() => {
+    let cancelled = false;
+    fetchLiveEvents(keysRef.current.ticketmaster).then(({ events, error }) => {
+      if (cancelled) return;
+      if (events.length) {
+        dispatch({ type: "SET_LIVE_EVENTS", events });
+        logDiag({
+          kind: "events",
+          severity: "info",
+          source: "liveEvents",
+          title: `Pulled ${events.length} live Wrocław events`,
+          context: { count: events.length },
+        });
+      } else if (error && error !== "no Ticketmaster API key") {
+        logDiag({
+          kind: "network",
+          severity: "warn",
+          source: "liveEvents",
+          title: `Live events refresh failed — ${error}`,
+          detail: "Showing cached + seeded events instead.",
+          context: { error },
+        });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.keys.ticketmaster]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scored = useMemo(
     () => (rawOffer ? scoreOffer(rawOffer, state.vehicle, state.thresholds) : null),
@@ -102,6 +134,8 @@ export default function App() {
   positionRef.current = state.position;
   const keysRef = useRef(state.keys);
   keysRef.current = state.keys;
+  const liveEventsRef = useRef(state.liveEvents);
+  liveEventsRef.current = state.liveEvents;
 
   const resolve = useCallback((decision: Decision) => {
     const s = scoredRef.current;
@@ -434,7 +468,7 @@ export default function App() {
       }
       zoneWasBelowRef.current = below;
 
-      for (const e of upcomingEvents(now, 1)) {
+      for (const e of upcomingEvents(now, 1, liveEventsRef.current)) {
         const minsToOut = (letOutMs(e) - now.getTime()) / 60_000;
         if (minsToOut > 0 && minsToOut <= 45 && !notifiedEventsRef.current.has(e.id)) {
           notifiedEventsRef.current.add(e.id);
