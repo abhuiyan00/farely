@@ -1,0 +1,20 @@
+# Normalize line endings to LF in the repo; check out native per-platform.
+* text=auto eol=lf
+
+# Windows launchers must stay CRLF.
+*.bat text eol=crlf
+
+# Gradle wrapper script is a shell script.
+gradlew text eol=lf
+
+# Treat binaries as binary (no EOL munging, no diff noise).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.apk binary
+*.aab binary
+*.jar binary
+*.keystore binary
+*.jks binary

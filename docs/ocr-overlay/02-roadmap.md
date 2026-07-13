@@ -16,9 +16,12 @@
 | 6 | Multi-app autopilot | 🟡 code-complete | `coordinator.ts` (pure) + `MultiAppCoordinator.kt`: auto-pause/resume/switch, one-active-trip rule. **No app has a "pause" — retargeted to the real online/offline toggle + "Stop new requests"; controls are *learned* per app (Phase 6b) and drive it view-id-first.** Compiles. Remaining: validate real taps + app-switch on device |
 | 6b | Learn-controls (per-app selectors) | 🟢 done (sim) | `controls.ts` + `LearnControlsScreen`: on-device node-tree dump (`captureControls`/`dumpControls`), driver tags each control, `SelectorProfile` persists + drives the coordinator (`present`/`clickRole`). Remaining: capture real Bolt/Uber view-ids on a device |
 | 7 | Identity-check passthrough | 🟡 code-complete | Face-check screens freeze all automation + hide overlay (`frozen`), `IdCheckOverlay` UI. Remaining: confirm keyword detection vs real Uber/Bolt verify screens |
-| 8 | Events calendar + phone export | 🟢 done (sim) | `events.ts` venues + let-out pricing, Events tab, `.ics` / `CalendarContract` insert. Remaining: bind a live events feed (currently listings + typical schedule) |
+| 8 | Events calendar + phone export | 🟢 done | `events.ts` venues + let-out pricing, Events tab, `.ics` / `CalendarContract` insert. **Live feed bound (8b): `liveEvents.ts` pulls real Wrocław events from Ticketmaster on open**, merged live > listing > typical |
 | 9 | Notifications | 🟢 done | In-app feed + bell; native `FarelyNotifications` channel + `notify` bridge |
 | 10 | Potato-phone LITE tier | 🟢 done | `device.ts` autodetect + `isLowRamDevice`; DOM-projection map, GL dynamic-imported/split, animations off |
+| 11 | Diagnostics DB + review | 🟢 done (sim) | `diagnostics.ts`/`diagStore.ts` (IndexedDB black box, ring-buffered) + `DiagnosticsScreen`; logs errors/decisions/vision/network. Verified in-browser |
+| 12 | Cloud-vision unknown-case | 🟡 code-complete | `vision.ts` (Anthropic, mock fallback) + native `captureScreen`/`emitUnknownScreen`; idCheck⇒freeze, ID checks never routed to cloud. Remaining: validate real screenshots on device |
+| 13 | Monorepo + professional repo | 🟢 done | Split into `apps/tester` + `apps/android`; git baseline, README/LICENSE/CONTRIBUTING, `docs/SRS.md`. Both builds green |
 
 > **Dependency note:** Phase 2 native code cannot compile until Phase 1 creates the
 > `android/` project. The Phase 2 source is staged under `native/android/` (see
@@ -111,3 +114,38 @@ channel. Only state changes worth interrupting for (NN/g: timely + specific + ra
 a WebGL-free DOM/SVG map, no animation, slower clock. MapLibre GL is
 dynamic-imported into its own chunk so LITE never loads it.
 Exit criteria: usable frame rate + no GL on a 2–3 GB device; Settings override honoured.
+
+## Phase 8b — Live events feed (Ticketmaster)
+`liveEvents.ts` pulls real Wrocław events from the **Ticketmaster Discovery API**
+(`city=Wroclaw&countryCode=PL`) on app open and on key change (same `feGet`
+transport as `carLookup`), maps them to `VenueEvent`s (venue resolved/synthesized
+to a valid engine zone), and `upcomingEvents` merges by provenance **live > listing
+> typical**. Fails soft to the seeded + typical calendar. Needs the driver's free
+Ticketmaster key. Exit criteria (production): live events visibly replace typical
+guesses for the same show.
+
+## Phase 11 — Diagnostics DB + review section
+An on-device "black box": `diagnostics.ts` (pure types/helpers) + `diagStore.ts`
+(zero-dep IndexedDB, ring-buffered to 2000, `logDiag()` facade) records every
+error, exception, decision, unknown case, vision verdict, coordinator action and
+network outcome. `DiagnosticsScreen` (from Settings) filters/searches, marks
+resolved, and exports the whole DB to JSON to dissect later. Verified in-browser
+(writes/reads, live refresh, export).
+
+## Phase 12 — Cloud-vision unknown-case handler
+When Farely hits a screen its heuristics + learned selectors can't place, it
+captures it and asks a vision model (`vision.ts` → Anthropic Messages API, with a
+deterministic mock fallback) what it is, takes a decision, and logs the case.
+Native `FarelyAccessibilityService.takeScreenshot()` + `captureScreen`/
+`emitUnknownScreen`, throttled + novelty-gated. **Safety:** an `idCheck` verdict
+freezes automation, and identity/face-check screens are never routed to the cloud
+(detected on-device). Deliberate, documented departure from on-device-only
+([VISION §5/§6](../VISION.md)). Exit criteria (production): tune the novelty gate +
+real screenshots on device.
+
+## Phase 13 — Monorepo + professional repo
+Split the Figma-export tree into `apps/tester` (web UI tester + engine) and
+`apps/android` (Capacitor APK; native gradle in `./android`, `webDir` →
+`../tester/dist`). Root workspace scripts; git baseline; `.gitignore` excludes
+build artifacts; README, LICENSE (MIT), CONTRIBUTING, and `docs/SRS.md` added.
+Both builds verified green from the new layout.

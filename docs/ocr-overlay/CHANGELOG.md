@@ -2,6 +2,56 @@
 
 Dated log of real changes. Newest first. Dates are absolute (YYYY-MM-DD).
 
+## 2026-07-13
+- **Monorepo restructure + professional repo.** Split the single Figma-export tree
+  into two workspace packages: `apps/tester` (the Vite web UI tester + the pure
+  engine that also ships in the APK's WebView) and `apps/android` (Capacitor host +
+  native Kotlin in `./android`, `webDir` → `../tester/dist`; the staged `.kt` mirror
+  moved to `apps/android/reference/`). Root becomes the workspace root (npm
+  workspaces + `pnpm-workspace.yaml` → `apps/*`) with `dev`/`build`/`sync`/`apk`
+  scripts. Added `git` baseline, a real `.gitignore` (excludes the 60k+ Android
+  build artifacts previously in the tree), `.gitattributes`, `README.md`, `LICENSE`
+  (MIT), `CONTRIBUTING.md`, and the full **`docs/SRS.md`** (ISO/IEC/IEEE 29148
+  structure, Mermaid UML: component, class, sequence, state, ER). Both builds
+  verified green from the new layout.
+- **Diagnostics DB (the black box) + review screen.** New on-device event log so
+  every error, exception, decision, unknown screen, coordinator action and network
+  outcome can be dissected later for tuning. `diagnostics.ts` (pure types + helpers:
+  filter/summarize/export JSON) + `diagStore.ts` (zero-dep **IndexedDB**,
+  ring-buffered to 2000, `logDiag()` facade firing a `farely:diag` event for live
+  UI). `DiagnosticsScreen` (from Settings) filters/searches, marks resolved, exports
+  the DB to JSON. Capture points wired: `window.onerror`/`unhandledrejection`, every
+  decision, the `carLookup`/`liveEvents` network paths, and every vision verdict.
+  Verified in-browser (writes/reads, filters, live refresh).
+- **Cloud-vision unknown-case handler.** When Farely hits a screen its heuristics +
+  learned selectors can't place (app update, redesign, promo takeover), it captures
+  it, asks a vision model what it is, takes a decision, and logs the case — the
+  driver's opted-in departure from on-device-only (their own key). `vision.ts`
+  (Anthropic Messages API via the `carLookup.feGet` transport; strict-JSON
+  classifier; deterministic keyword **mock** so the web demo runs without a key).
+  `App.tsx` `farely:unknownScreen` handler classifies → acts (`idCheck` ⇒ freeze,
+  else note) → logs unknown-case + vision rows. Native:
+  `FarelyAccessibilityService.takeScreenshot()` → base64 PNG, `captureScreen` bridge
+  method, `emitUnknownScreen`, plus a throttled + novelty-gated auto-emit that
+  **never routes identity/face-check screens to the cloud** (handled on-device).
+  Settings gained the key fields (with an explicit "captures are sent to Anthropic"
+  disclosure) + a "Simulate unknown screen" trigger. `docs/VISION.md` §4/§6 updated.
+  Verified in-browser: `idCheck` verdict flips the freeze overlay.
+- **Live events on app open (Ticketmaster).** `liveEvents.ts` pulls real Wrocław
+  events from the Ticketmaster Discovery API (`city=Wroclaw&countryCode=PL`) on open
+  and on key change, maps them to `VenueEvent`s (venue resolved/synthesized to a
+  valid engine zone). `events.ts` gained a `source` field; `upcomingEvents(now,
+  days, live)` merges **live > listing > typical** so a real announcement replaces a
+  guess. `session.ts` caches `liveEvents` + `eventsFetchedAt` (persisted).
+  EventsScreen shows a Refresh button, "n live · updated HH:MM", and live/listed
+  badges; falls back cleanly to seeded + typical with no key.
+- **Keys.** `session.ts` gained user-supplied `keys` (anthropic/ticketmaster),
+  stored on-device only, persisted; Settings "Cloud vision & live data" card. Vite
+  dev proxies added: `/anthropic`, `/tm-api` (native uses `CapacitorHttp`).
+- Build: web `vite build` green (~309 kB main, maplibre still split); Android
+  `gradlew assembleDebug` → BUILD SUCCESSFUL; native `.kt` re-mirrored to
+  `apps/android/reference/`.
+
 ## 2026-07-12
 - **Learn-controls (real buttons, not guessed labels).** Correcting a wrong
   premise: no ride app ships a "Pause" button, and the real controls (online/

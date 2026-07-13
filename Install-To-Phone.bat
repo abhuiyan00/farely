@@ -6,7 +6,7 @@ REM "Allow USB debugging?" prompt on the phone screen.
 setlocal
 cd /d "%~dp0"
 set "ADB=C:\Users\farha\AppData\Local\Android\Sdk\platform-tools\adb.exe"
-set "APK=%~dp0android\app\build\outputs\apk\debug\app-debug.apk"
+set "APK=%~dp0apps\android\android\app\build\outputs\apk\debug\app-debug.apk"
 
 echo [1/4] Building web app...
 call npm run build
@@ -18,24 +18,27 @@ if errorlevel 1 (
 
 echo.
 echo [2/4] Copying web assets into the Android project...
+pushd apps\android
 call npx cap copy android
 if errorlevel 1 (
   echo Capacitor copy failed.
+  popd
   pause
   exit /b 1
 )
+popd
 
 echo.
 echo [3/4] Building the APK (first run can take a few minutes)...
-cd android
+cd apps\android\android
 call gradlew.bat assembleDebug
 if errorlevel 1 (
   echo Android build failed - see the error above.
-  cd ..
+  cd ..\..\..
   pause
   exit /b 1
 )
-cd ..
+cd ..\..\..
 
 echo.
 echo [4/4] Installing on the phone...
