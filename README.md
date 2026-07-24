@@ -19,6 +19,47 @@ steering toward the most profitable hours and places — while running the multi
 > in [`docs/VISION.md`](docs/VISION.md); the full requirements in
 > [`docs/SRS.md`](docs/SRS.md).
 
+<p align="center">
+  <img src="assets/offer-verdict.jpg" alt="A live Bolt offer scored MARGINAL — 14.10 zł net in pocket, 56 zł/h, with the accept button and a Wrocław map route" width="330">
+</p>
+
+<p align="center"><sub><b>The one-glance verdict.</b> A live offer scored on deadhead-adjusted take-home: <b>ACCEPT / MARGINAL / DECLINE</b>, the net <i>in pocket</i> after the platform's cut, income tax, and car costs — plus zł/h · zł/km · zł/min — before the accept timer runs out.</sub></p>
+
+## Screenshots
+
+The web UI tester (the same pure engine that ships inside the APK), driven end-to-end
+through a simulated Wrocław shift — no mockups, real screens.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/home-map.jpg" alt="Home screen with a live Wrocław demand map, zone zł/h pills, and the driver's position">
+      <br><sub><b>Home.</b> Live Wrocław demand map — zone zł/h pills, your position, today's net and acceptance, and a nudge when the zone you're in drops below target.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/events.jpg" alt="Events screen listing Wrocław venue let-outs with crowd size, let-out time, and expected zł/h">
+      <br><sub><b>Events.</b> Venue let-outs = ride waves. Each show's crowd size, let-out time, distance, and expected zł/h — exportable to the phone calendar so you can position early.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/earnings.jpg" alt="Rides screen: an honest ledger of every offer scored this session, taken or skipped">
+      <br><sub><b>Rides.</b> An honest ledger of every offer scored this session — taken or skipped, the verdict it got, and the running net zł/h.</sub>
+    </td>
+    <td width="50%" valign="top">
+      <img src="assets/settings.jpg" alt="Settings screen: earnings targets and income-tax normalization">
+      <br><sub><b>Targets &amp; tax.</b> The bar every verdict is measured against (manual or self-tuning), with income-tax normalization so Bolt's tax-included price compares like-for-like with Uber/FreeNow.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="assets/id-check.jpg" alt="An identity/face-check overlay showing all automation frozen">
+      <br><sub><b>Safety first.</b> When a platform asks for a face/ID check, all automation freezes and the overlay hides — Farely never gets between the driver and a verification camera.</sub>
+    </td>
+    <td width="50%" valign="top"></td>
+  </tr>
+</table>
+
 ---
 
 ## Monorepo layout
