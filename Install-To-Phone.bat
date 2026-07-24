@@ -5,7 +5,10 @@ REM Requires: USB debugging ON, phone plugged in, and you've accepted the
 REM "Allow USB debugging?" prompt on the phone screen.
 setlocal
 cd /d "%~dp0"
-set "ADB=C:\Users\farha\AppData\Local\Android\Sdk\platform-tools\adb.exe"
+REM Resolve adb.exe: use it from PATH if present, else the default per-user SDK
+REM location (works regardless of the Windows username).
+set "ADB=%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"
+where adb >nul 2>&1 && set "ADB=adb"
 set "APK=%~dp0apps\android\android\app\build\outputs\apk\debug\app-debug.apk"
 
 echo [1/4] Building web app...

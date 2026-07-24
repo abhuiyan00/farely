@@ -1,5 +1,14 @@
 # Farely 🚗
 
+> [!WARNING]
+> **Personal prototype — for personal and educational purposes only.** Farely is a
+> non-commercial learning/portfolio project. To score the driver's *own* ride offers it
+> reads other apps' screens through Android accessibility, which **violates the Terms of
+> Service of Bolt, Uber, FreeNow, and Google Play**. It is **not affiliated with, endorsed
+> by, or connected to** any of those companies, and all product names and marks belong to
+> their respective owners. This is not production software — do not run it on a driving
+> account you are not prepared to lose. Use entirely at your own risk.
+
 **A personal rideshare/delivery driver assistant for Wrocław, Poland.** Farely
 reads the driver's *own* ride-app offers on-screen, scores each on **deadhead-adjusted
 net profit** (PLN), says **ACCEPT / MARGINAL / DECLINE** in one glance, and keeps
@@ -53,12 +62,21 @@ npm run apk           # web build → cap copy → gradlew assembleDebug
 #   → apps/android/android/app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Windows one-click helpers: **`Open-Farely.bat`** (dev preview) and
-**`Install-To-Phone.bat`** (build + `adb install` to a USB phone).
+Windows one-click helpers: **`Open-Farely.bat`** (web demo), **`Run-On-Emulator.bat`**
+(APK on a virtual phone) and **`Install-To-Phone.bat`** (build + `adb install` to a
+USB phone).
 
 > Building the APK needs the Android SDK. `pnpm install` places
 > `@capacitor/android` where the gradle project expects it; with plain npm you may
 > need it under `apps/android/node_modules`.
+
+**Step-by-step guides** (demo and installation are independent — pick one):
+
+| Guide | What it covers |
+|---|---|
+| [`docs/guides/DEMO.md`](docs/guides/DEMO.md) | Web demo in the browser — zero Android setup, 5-minute feature tour |
+| [`docs/guides/EMULATOR.md`](docs/guides/EMULATOR.md) | Run the real APK on a virtual phone + a precise verification checklist |
+| [`docs/guides/ANDROID-INSTALL.md`](docs/guides/ANDROID-INSTALL.md) | Install on your own phone: prerequisites, USB install, first-run permissions, troubleshooting |
 
 ---
 
@@ -70,29 +88,29 @@ Windows one-click helpers: **`Open-Farely.bat`** (dev preview) and
 4. **Self-tuning** — thresholds adapt to real outcomes; manual zł/h override.
 5. **Multi-app autopilot** — one active trip per app: pause/resume/switch the *other* apps (`coordinator.ts`). Never taps a ride offer's Accept.
 6. **Learn-controls** — no ride app has a "pause", so the driver *teaches* Farely each app's real buttons once, matched by view-id (`controls.ts`).
-7. **Cloud-vision unknown-case handler** — a screen Farely can't recognize (app update, redesign) is captured, classified by a vision model, decided, and logged (`vision.ts`). *Owner-opted-in; see privacy note.*
-8. **Live events** — real Wrocław let-outs pulled from Ticketmaster on open, priced as demand, exportable to the phone calendar (`liveEvents.ts` / `events.ts`).
+7. **Unknown-screen handler** — a screen Farely can't recognize is read on-device (offline text recognition) and classified by a weighted-keyword heuristic, then decided and logged; identity checks freeze automation (`vision.ts`). *An optional cloud-vision path exists in the code but ships off — see privacy note.*
+8. **Live events** — Wrocław let-outs from a built-in calendar (typical venue schedules + annual festivals, computed for any date), priced as demand, exportable to the phone calendar (`liveEvents.ts` / `events.ts`).
 9. **Diagnostics DB** — an on-device "black box" (IndexedDB) of everything Farely does or trips over, reviewable and exportable for tuning (`diagnostics.ts` / `diagStore.ts`).
 10. **Notifications** + a **LITE performance tier** for low-end phones.
 
 ---
 
-## Privacy & keys
+## Privacy
 
-Farely is **on-device by default** — earnings, logs, and normal operation never
-leave the phone. The **one owner-chosen exception** is the cloud-vision classifier:
-when it hits an unrecognized screen it sends *that* capture to the Anthropic API to
-identify it. Guardrails: the driver supplies their **own** API key (stored on-device,
-never committed), it never proposes tapping Accept, and **identity/face-check screens
-are never sent to the cloud** (handled on-device → freeze). Full rationale in
-[`VISION.md §5/§6`](docs/VISION.md).
+Farely runs **fully on-device** — earnings, logs, screen reads, and normal operation
+never leave the phone. Unknown screens are recognized on-device (the same offline text
+recognition as Google Lens), so there's no cloud call, no account, and no setup.
+**Identity/face-check screens are detected on-device and freeze all automation** — never
+captured, never sent anywhere — and Farely never proposes tapping a ride offer's Accept.
+Full rationale in [`VISION.md §5/§6`](docs/VISION.md).
 
-Optional keys (Settings → *Cloud vision & live data*): **Anthropic** (screen vision)
-and **Ticketmaster** (live events). Both are free to obtain; Farely works without
-them (mock vision + seeded/typical events).
+Live events come from a **built-in Wrocław calendar** (typical venue schedules + annual
+festivals, computed for any date). A cloud-vision classifier (Anthropic) for unusual
+redesigns and a Ticketmaster live-events feed also exist in the code, but ship **off by
+default** and aren't surfaced in the prototype's UI.
 
-Reading platform screens likely violates driver ToS — a personal-use trade-off the
-driver accepts ([VISION §7](docs/VISION.md) / [permissions & legal](docs/ocr-overlay/03-android-permissions-and-legal.md)).
+Reading platform screens likely violates the platforms' driver ToS — a personal-use
+trade-off (see [VISION §7](docs/VISION.md) / [permissions & legal](docs/ocr-overlay/03-android-permissions-and-legal.md)).
 
 ---
 
@@ -100,7 +118,6 @@ driver accepts ([VISION §7](docs/VISION.md) / [permissions & legal](docs/ocr-ov
 - [`docs/VISION.md`](docs/VISION.md) — the why (scope, non-goals, principles).
 - [`docs/SRS.md`](docs/SRS.md) — full requirements + UML (component, class, sequence, state, ER).
 - [`docs/ocr-overlay/`](docs/ocr-overlay/) — the live-capture sub-project (architecture, roadmap, permissions, changelog).
-- [`CLAUDE.md`](CLAUDE.md) — repo guide for AI coding assistants.
 
 ## License
 [MIT](LICENSE).
