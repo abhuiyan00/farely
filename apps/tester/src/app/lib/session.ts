@@ -8,6 +8,7 @@ import { createContext, useContext } from "react";
 import {
   DEFAULT_VEHICLE,
   DEFAULT_THRESHOLDS,
+  DEFAULT_TAX_RATE,
   PLACES,
   tuneThresholds,
   type Place,
@@ -81,6 +82,7 @@ function noticesFromEffects(effects: CoordEffect[]): Notice[] {
 export interface SessionState {
   vehicle: VehicleProfile;
   thresholds: Thresholds;
+  taxRate: number; // driver income-tax rate applied to pre-tax platform prices (Uber/FreeNow)
   position: Place;
   log: LogEntry[];
   installed: Platform[];
@@ -125,6 +127,7 @@ export type Action =
   | { type: "UPDATE_VEHICLE"; patch: Partial<VehicleProfile> }
   | { type: "SET_TARGET_HR"; value: number }
   | { type: "SET_TARGET_KM"; value: number }
+  | { type: "SET_TAX_RATE"; value: number }
   | { type: "SET_THRESHOLD_MODE"; mode: ThresholdMode }
   | { type: "SET_OCR_MS"; value: number }
   | { type: "TOGGLE_PLATFORM"; platform: Platform };
@@ -136,6 +139,7 @@ const PERSIST_KEY = "farely:session:v2";
 interface Persisted {
   vehicle: VehicleProfile;
   thresholds: Thresholds;
+  taxRate?: number;
   installed: Platform[];
   coord?: CoordSettings;
   perfMode?: PerfMode;
@@ -159,6 +163,7 @@ export function persist(state: SessionState) {
     const p: Persisted = {
       vehicle: state.vehicle,
       thresholds: state.thresholds,
+      taxRate: state.taxRate,
       installed: state.installed,
       coord: state.coord,
       perfMode: state.perfMode,
@@ -179,6 +184,7 @@ export function initialState(): SessionState {
   return {
     vehicle: { ...DEFAULT_VEHICLE, ...saved.vehicle },
     thresholds: { ...DEFAULT_THRESHOLDS, ...saved.thresholds },
+    taxRate: saved.taxRate ?? DEFAULT_TAX_RATE,
     position: HOME,
     log: [],
     installed,
@@ -306,6 +312,8 @@ export function reducer(state: SessionState, action: Action): SessionState {
       return { ...state, thresholds: { ...state.thresholds, targetHr: action.value } };
     case "SET_TARGET_KM":
       return { ...state, thresholds: { ...state.thresholds, targetKm: action.value } };
+    case "SET_TAX_RATE":
+      return { ...state, taxRate: Math.max(0, Math.min(0.4, action.value)) };
     case "SET_THRESHOLD_MODE":
       return { ...state, thresholds: { ...state.thresholds, mode: action.mode } };
     case "SET_OCR_MS":

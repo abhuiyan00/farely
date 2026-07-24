@@ -30,7 +30,7 @@ import {
   effectiveHrBar,
   type Platform,
 } from "./lib/engine";
-import { upcomingEvents, letOutMs, CROWD_LABEL } from "./lib/events";
+import { upcomingEvents, letOutMs, CROWD_LABEL, seedFreshness } from "./lib/events";
 import { fetchLiveEvents } from "./lib/liveEvents";
 import { withNativeProfile } from "./lib/device";
 import { FarelyBridge, IS_NATIVE } from "./lib/bridge";
@@ -91,10 +91,33 @@ export default function App() {
   // persist profile/targets/platforms/autopilot/perf/learned-controls across restarts
   useEffect(() => {
     persist(state);
-  }, [state.vehicle, state.thresholds, state.installed, state.coord, state.perfMode, state.selectors, state.keys, state.liveEvents]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [state.vehicle, state.thresholds, state.taxRate, state.installed, state.coord, state.perfMode, state.selectors, state.keys, state.liveEvents]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // On open (and whenever the Ticketmaster key changes): pull the latest Wrocław
   // events off the web and merge them into the calendar. Fails soft to the seed.
+  // Freshness deadline: the hand-verified listings cover a fixed window and there's
+  // no free city-wide events API to refresh them, so once that window has passed
+  // warn the driver (once) that the calendar is running on typical patterns only.
+  useEffect(() => {
+    const fresh = seedFreshness();
+    if (!fresh.stale) return;
+    const through = new Date(fresh.verifiedThrough).toISOString().slice(0, 10);
+    logDiag({
+      kind: "events",
+      severity: "warn",
+      source: "liveEvents",
+      title: `Event listings stale — verified only through ${through}`,
+      detail: `${fresh.daysPast} days past the verified window; showing typical patterns + annual anchors. Add a Ticketmaster key or update the app for fresh listings.`,
+      context: { daysPast: fresh.daysPast, verifiedThrough: through },
+    });
+    dispatch({
+      type: "NOTIFY",
+      kind: "system",
+      title: "Event data needs a refresh",
+      body: `Verified listings ran out ${through}. Farely is showing typical crowds — set a Ticketmaster key for live events.`,
+    });
+  }, [dispatch]);
+
   useEffect(() => {
     let cancelled = false;
     fetchLiveEvents(keysRef.current.ticketmaster).then(({ events, error }) => {
@@ -125,8 +148,8 @@ export default function App() {
   }, [state.keys.ticketmaster]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scored = useMemo(
-    () => (rawOffer ? scoreOffer(rawOffer, state.vehicle, state.thresholds) : null),
-    [rawOffer, state.vehicle, state.thresholds],
+    () => (rawOffer ? scoreOffer(rawOffer, state.vehicle, state.thresholds, state.taxRate) : null),
+    [rawOffer, state.vehicle, state.thresholds, state.taxRate],
   );
   const scoredRef = useRef(scored);
   scoredRef.current = scored;
@@ -213,7 +236,7 @@ export default function App() {
           kind: "vision",
           severity,
           source: "vision",
-          title: `Vision: ${res.class}${res.simulated ? " (simulated)" : ""} → ${res.action}`,
+          title: `Vision: ${res.class}${res.method === "on-device" ? " (on-device)" : ""} → ${res.action}`,
           detail: res.summary + (res.error ? `\n(${res.error})` : ""),
           context: {
             platform: cap.platform,
@@ -221,7 +244,7 @@ export default function App() {
             action: res.action,
             confidence: res.confidence,
             controls: res.controls,
-            model: res.simulated ? "mock" : VISION_MODEL,
+            model: res.method === "on-device" ? "on-device-ocr" : VISION_MODEL,
           },
         });
         if (res.action === "freeze" && cap.platform) {

@@ -339,8 +339,9 @@ Priority: **M** must / **S** should / **C** could. Verification: **T** test-in-s
 **B** build, **D** on-device.
 
 ### 4.1 Offer engine — `engine.ts` (FR-OE)
-- **FR-OE-1 (M/T)** Compute **net** = fare − running cost − deadhead cost, over trip + pickup legs, in PLN via `money()`.
-- **FR-OE-2 (M/T)** Derive `perHr`, `perKm`, `perMin` from net over trip time/distance including deadhead time.
+- **FR-OE-0 (M/T)** Normalize the platform's shown price to real driver take-home (`driverTakeHome`/`PLATFORM_ECON`): the offer card is already net of commission on every platform, but Bolt is tax-included while Uber/FreeNow are pre-income-tax, so subtract the driver's `taxRate` (ryczałt) from the pre-tax platforms only.
+- **FR-OE-1 (M/T)** Compute **net** = take-home (post-tax revenue) − running cost − deadhead cost, over trip + pickup legs, in PLN via `money()`.
+- **FR-OE-2 (M/T)** Derive `perHr`, `perKm`, `perMin` from net over **total** time/distance (trip + deadhead) — deadhead km drags `perKm` down exactly as deadhead time drags `perHr` down.
 - **FR-OE-3 (M/T)** Emit a `verdict` (`accept|marginal|decline`) vs the effective thresholds and a one-line plain `reason`.
 - **FR-OE-4 (M/T)** `offerFromRaw` maps a native `RawOffer` (fuzzy `resolvePlace`, missing-field estimation) into a scorable offer, flagging `approx`.
 - **FR-OE-5 (S/T)** `generateOffer` produces realistic Wrocław offers for the simulator when not native.
@@ -436,14 +437,21 @@ Priority: **M** must / **S** should / **C** could. Verification: **T** test-in-s
 
 ### 6.1 Net-profit cost model (`engine.ts`)
 ```
-net      = fare − runningCost·(pickupKm + tripKm) − timeCost·(pickupMin + tripMin)
+takeHome = taxIncluded ? shownFare : shownFare·(1 − taxRate)   ← Bolt netto vs Uber pre-tax
+net      = takeHome − runningCost/km·(pickupKm + tripKm)
 runningCost/km = fuel(lPer100km × pricePLN/100) + depreciation + maintenance + tyres
-perHr    = net ÷ ((pickupMin + tripMin)/60)      ← deadhead time counts against you
+totalKm  = pickupKm + tripKm      totalMin = pickupMin + tripMin
+perHr    = net ÷ (totalMin/60)    ← deadhead time counts against you
+perKm    = net ÷ totalKm          ← deadhead km counts against you (same basis as perHr)
 verdict  = accept   if perHr ≥ targetHr AND perKm ≥ targetKm
            marginal if within a tolerance band
            decline  otherwise
 ```
-The headline number is always **net after deadhead**, never the platform's gross.
+Grounded in real Wrocław offer cards (Jan 2026): Bolt shows `zł 13.21 (NET, tax
+included)`; Uber shows `PLN 20.99 · Net of service fee` (commission removed, income
+tax still owed). Both are already net of commission — Farely re-taxes only the
+pre-tax platforms so the two compare like-for-like. The headline number is always
+**net after tax + deadhead**, never the platform's shown price.
 
 ### 6.2 Self-tuning (`tuneThresholds`)
 Each non-expired decision nudges the effective bar toward the driver's revealed

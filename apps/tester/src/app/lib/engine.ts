@@ -98,7 +98,7 @@ export function tuneThresholds(
   return {
     ...t,
     minEurHr: round(minEurHr, 2),
-    minEurKm: round(clamp(minEurHr / 34, 2.5, 6), 2), // km bar tracks the hr bar
+    minEurKm: round(clamp(minEurHr / 22, 1.5, 5), 2), // km bar tracks the hr bar on the total-km basis (~city speed km/h)
     decisions: t.decisions + 1,
   };
 }
@@ -159,7 +159,9 @@ export interface Offer {
   tripMin: number;
   deadheadKm: number;
   deadheadMin: number;
-  fare: number; // gross offer shown by the platform
+  fare: number; // the price shown on the platform's offer card — already net of the
+                // platform commission; Bolt is tax-included, Uber/FreeNow are
+                // pre-income-tax (normalized in scoreOffer — see PLATFORM_ECON)
   surge: number; // 1.0 = no surge
   passenger: string; // rider name shown on the platform offer ("" when unknown)
   rating: number; // rider rating (1..5, 0 = unknown)
@@ -173,6 +175,8 @@ const RIDER_NAMES = [
 ];
 
 export interface ScoredOffer extends Offer {
+  revenue: number; // take-home from the fare: post-commission + post-income-tax, before car costs
+  tax: number; // income tax subtracted to normalize (0 for tax-included platforms like Bolt)
   runningCost: number;
   deadheadCost: number;
   net: number;
@@ -189,6 +193,41 @@ const PRICING: Record<Platform, { base: number; perKm: number; perMin: number }>
   Bolt: { base: 5.0, perKm: 2.4, perMin: 0.4 },
   FreeNow: { base: 7.0, perKm: 2.8, perMin: 0.5 },
 };
+
+// ─── Platform economics: how the shown price maps to real take-home ───────────
+// Grounded in real Wrocław driver screenshots (Jan 2026):
+//  • Bolt offer card reads "zł 13.21 (NET, tax included)" — already net of Bolt's
+//    commission AND the driver's income tax → it *is* take-home before car costs.
+//  • Uber offer card reads "PLN 20.99 · Net of service fee, incl. VAT on service
+//    fee" — net of Uber's commission but BEFORE the driver's income tax (tax owed).
+//  • A completed Bolt ride showed commission 18.82 / 61.19 ≈ 31% of the gross.
+// So scoring must NOT re-subtract commission (both cards already removed it) — it
+// only normalizes the *tax* layer: apply the driver's income tax to the pre-tax
+// displays (Uber/FreeNow) so they compare like-for-like with Bolt's tax-included NET.
+export interface PlatformEconomics {
+  commission: number; // platform's cut of the gross fare — reference only (already out of `fare`)
+  taxIncluded: boolean; // is the driver's income tax already taken out of the shown price?
+}
+export const PLATFORM_ECON: Record<Platform, PlatformEconomics> = {
+  Uber: { commission: 0.25, taxIncluded: false }, // "Net of service fee" → pre income tax
+  Bolt: { commission: 0.31, taxIncluded: true }, // "NET, tax included"
+  FreeNow: { commission: 0.25, taxIncluded: false },
+};
+
+// Default Polish ryczałt (lump-sum) income-tax rate for passenger transport. The
+// driver's real rate lives in session settings; applied only where taxIncluded=false.
+export const DEFAULT_TAX_RATE = 0.085;
+
+/**
+ * The driver's actual take-home from the fare — post-commission (already reflected
+ * in `fare`) and post-income-tax — before vehicle running costs. Tax-included
+ * platforms (Bolt) return the shown price as-is; pre-tax platforms (Uber/FreeNow)
+ * have the income tax subtracted so every platform is comparable.
+ */
+export function driverTakeHome(offer: Offer, taxRate = DEFAULT_TAX_RATE): number {
+  const econ = PLATFORM_ECON[offer.platform] ?? { commission: 0.25, taxIncluded: false };
+  return econ.taxIncluded ? offer.fare : round(offer.fare * (1 - taxRate), 2);
+}
 
 function avgSpeedKmH(from: Place, to: Place): number {
   // Airport / long hops flow faster; inner-city crawls.
@@ -250,15 +289,23 @@ export function scoreOffer(
   offer: Offer,
   v: VehicleProfile,
   t: Thresholds,
+  taxRate = DEFAULT_TAX_RATE,
 ): ScoredOffer {
   const cpk = runningCostPerKm(v);
+  // Normalize the shown price to real take-home first (income tax on pre-tax
+  // platforms), THEN subtract the car costs the driver actually eats.
+  const revenue = driverTakeHome(offer, taxRate);
+  const tax = round(offer.fare - revenue, 2); // 0 when the shown price is already tax-included
   const runningCost = round(offer.tripKm * cpk, 2);
   const deadheadCost = round(offer.deadheadKm * cpk, 2);
-  const net = round(offer.fare - runningCost - deadheadCost, 2);
+  const net = round(revenue - runningCost - deadheadCost, 2);
 
+  const totalKm = offer.tripKm + offer.deadheadKm;
   const totalMin = offer.tripMin + offer.deadheadMin;
   const perHr = round(net / (totalMin / 60), 2);
-  const perKm = round(net / offer.tripKm, 2);
+  // Net over EVERY km the car moves (deadhead + trip) — same total basis as perHr,
+  // so a long drive to pickup drags zł/km down just like it drags zł/hr down.
+  const perKm = round(net / totalKm, 2);
   const perMin = round(net / totalMin, 2);
 
   const bar = effectiveHrBar(t);
@@ -287,6 +334,8 @@ export function scoreOffer(
 
   return {
     ...offer,
+    revenue,
+    tax,
     runningCost,
     deadheadCost,
     net,

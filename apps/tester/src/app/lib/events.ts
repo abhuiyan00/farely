@@ -85,6 +85,53 @@ const REAL_VENUE: Record<string, string> = {
   rewiry1: "rewiry", rewiry2: "rewiry", gogol: "a2", mrozu: "hala", kizo: "hala",
 };
 
+// ── Freshness deadline ────────────────────────────────────────────────────────
+// The verified listings above are hand-researched and cover a fixed window. There
+// is no free city-wide events API to keep them current (Ticketmaster needs a key;
+// Bandsintown is artist-only), so past this date the calendar falls back to the
+// venues' *typical* patterns + annual anchors only. `seedFreshness` lets the app
+// warn the driver when that has happened, rather than pretending the seed is live.
+export const VERIFIED_THROUGH = at(2026, 8, 31, 23, 59);
+
+export interface SeedFreshness {
+  verifiedThrough: number;
+  stale: boolean;
+  daysPast: number;
+}
+
+export function seedFreshness(now = new Date()): SeedFreshness {
+  const ms = now.getTime();
+  const stale = ms > VERIFIED_THROUGH;
+  return {
+    verifiedThrough: VERIFIED_THROUGH,
+    stale,
+    daysPast: stale ? Math.floor((ms - VERIFIED_THROUGH) / 86_400_000) : 0,
+  };
+}
+
+// ── Annual anchors ────────────────────────────────────────────────────────────
+// Marquee Wrocław events that recur on roughly the same date every year. Emitting
+// them from the recurring generator (below) means a multi-year lookahead still
+// surfaces the big festivals — labeled "typical", since the exact 2027+ dates
+// aren't confirmed — instead of only weekly opera/philharmonic patterns.
+interface AnnualAnchor {
+  key: string;
+  venueId: string;
+  title: string;
+  month: number;
+  day: number;
+  hour: number;
+  durationMin: number;
+  crowd: 1 | 2 | 3;
+  kind: EventKind;
+}
+const ANNUAL_ANCHORS: AnnualAnchor[] = [
+  { key: "wrosound", venueId: "impart", title: "WROsound Festival", month: 7, day: 17, hour: 16, durationMin: 420, crowd: 2, kind: "festival" },
+  { key: "rewiry", venueId: "rewiry", title: "Czarne Rewiry Festival", month: 7, day: 24, hour: 17, durationMin: 360, crowd: 1, kind: "festival" },
+  { key: "nye", venueId: "impart", title: "New Year's Eve city crowd", month: 12, day: 31, hour: 22, durationMin: 180, crowd: 3, kind: "festival" },
+  { key: "newyear", venueId: "hala", title: "New Year's concert", month: 1, day: 1, hour: 18, durationMin: 120, crowd: 2, kind: "concert" },
+];
+
 const OPERA_TITLES = ["Carmen", "La Traviata", "Nabucco", "Halka", "Straszny dwór", "Eugeniusz Oniegin"];
 const NFM_TITLES = ["NFM Filharmonia Wrocławska", "Wieczór kameralny", "Jazz w NFM", "Recital organowy", "Lutosławski Quartet"];
 
@@ -155,6 +202,23 @@ function recurringFor(day: Date): VenueEvent[] {
       kind: "sport",
       verified: false,
     });
+  }
+
+  // Annual marquee anchors (festivals etc.) so a multi-year lookahead keeps the big
+  // crowd nights, not just the weekly patterns.
+  for (const a of ANNUAL_ANCHORS) {
+    if (a.month === mo && a.day === d) {
+      out.push({
+        id: `${a.key}-${y}`,
+        venue: byId[a.venueId],
+        title: a.title,
+        startMs: at(y, mo, d, a.hour),
+        durationMin: a.durationMin,
+        crowd: a.crowd,
+        kind: a.kind,
+        verified: false,
+      });
+    }
   }
 
   return out;

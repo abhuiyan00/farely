@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ShieldCheck, Crosshair, ChevronRight, Activity } from "lucide-react";
-import { useSession, effectiveTier, type ApiKeyName } from "../lib/session";
+import { useSession, effectiveTier } from "../lib/session";
 import { requiredLearned, REQUIRED_ROLES, isPlatformReady } from "../lib/controls";
 import { SIM_SCREENS } from "../lib/vision";
 import { unresolvedCount, DIAG_EVENT } from "../lib/diagStore";
@@ -89,22 +89,6 @@ export default function SettingsScreen({
     </span>
   );
 
-  const keyField = (name: ApiKeyName, label: string, placeholder: string, help: string) => (
-    <div style={{ padding: "8px 14px 10px" }}>
-      <div style={{ fontSize: 12.5, color: T.ink2, fontWeight: 600, marginBottom: 4 }}>{label}</div>
-      <input
-        type="password"
-        value={state.keys[name] ?? ""}
-        onChange={(e) => dispatch({ type: "SET_KEY", name, value: e.target.value })}
-        placeholder={placeholder}
-        autoComplete="off"
-        spellCheck={false}
-        style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${T.border}`, background: T.inputBg, color: T.ink, fontSize: 12, fontFamily: MONO, boxSizing: "border-box" }}
-      />
-      <div style={{ fontSize: 10.5, color: T.ink4, marginTop: 3, lineHeight: 1.4 }}>{help}</div>
-    </div>
-  );
-
   return (
     <div style={{ position: "absolute", inset: 0, overflowY: "auto", background: T.bg, fontFamily: SANS }}>
       <div style={{ padding: "calc(env(safe-area-inset-top, 0px) + 16px) 16px 10px" }}>
@@ -131,7 +115,13 @@ export default function SettingsScreen({
           </div>
         </Row>
         <Row label="Min net zł/h">{num(t.targetHr, 1, "zł/h", (n) => dispatch({ type: "SET_TARGET_HR", value: n }))}</Row>
-        <Row label="Min net zł/km">{num(t.targetKm, 0.05, "zł/km", (n) => dispatch({ type: "SET_TARGET_KM", value: n }))}</Row>
+        <Row label="Min net zł/km" sub="Net over total km — the drive to pickup counts too">{num(t.targetKm, 0.05, "zł/km", (n) => dispatch({ type: "SET_TARGET_KM", value: n }))}</Row>
+        <Row
+          label="Income tax (ryczałt)"
+          sub="Bolt shows NET (tax incl.); Uber/FreeNow show pre-tax — this is subtracted from those to compare like-for-like"
+        >
+          {num(+(state.taxRate * 100).toFixed(1), 0.5, "%", (n) => dispatch({ type: "SET_TAX_RATE", value: n / 100 }))}
+        </Row>
         <Row
           label="Active bar"
           sub={t.mode === "auto" ? `learned from ${t.decisions} decisions` : "your manual targets"}
@@ -231,21 +221,9 @@ export default function SettingsScreen({
       </Card>
 
       <Card
-        title="Cloud vision & live data"
-        sub="Classify screens Farely doesn't recognize and pull live events — with your own keys, stored on this phone only"
+        title="Screen recognition & live data"
+        sub="No setup needed: unknown screens are read on-device (free, offline — same text recognition as Google Lens), and events come from Farely's built-in Wrocław calendar (typical schedules + annual festivals, computed for any date)."
       >
-        {keyField(
-          "anthropic",
-          "Anthropic API key — screen vision",
-          "sk-ant-…",
-          "Classifies unknown app screens (updates, redesigns). From console.anthropic.com. Note: screen captures are sent to Anthropic to classify them.",
-        )}
-        {keyField(
-          "ticketmaster",
-          "Ticketmaster API key — live events",
-          "consumer key",
-          "Pulls real Wrocław events on open. Free key at developer.ticketmaster.com.",
-        )}
         {!isNative && (
           <Row label="Simulate unknown screen" sub="Run the capture → vision → decision → log path" last>
             <select

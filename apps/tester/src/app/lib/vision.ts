@@ -7,10 +7,18 @@
 // still hold — Farely never proposes tapping a ride offer's Accept, and an
 // identity/face check is classified as a *freeze* so automation stands down.
 //
+// TWO tiers, and the free one is the default. Most drivers have no Anthropic key
+// but every Android phone ships Google's on-device text recognition (ML Kit — the
+// same OCR engine behind Google Lens, free, offline, no key). So the baseline path
+// is: read the screen's text on-device, then classify it with the deterministic
+// keyword heuristic below (`heuristicClassify`). A cloud key is an OPTIONAL sharper
+// read for unusual redesigns the keywords miss — not a requirement.
+//   NB (native): on device, wire the ML Kit OCR string of the captured screen into
+//   `ScreenCapture.hint` so this heuristic runs on real text; the cloud call is only
+//   reached when the driver has set a key.
 // Transport mirrors carLookup.feGet: CapacitorHttp on device (no CORS), a Vite
-// dev proxy (/anthropic) in `npm run dev`, direct fetch otherwise. With no key
-// (or on failure) it degrades to a deterministic keyword mock so the web demo
-// still runs the full capture → decision → DB path.
+// dev proxy (/anthropic) in `npm run dev`, direct fetch otherwise. On any cloud
+// failure it falls back to the same on-device heuristic so the flow never dead-ends.
 
 import { Capacitor, CapacitorHttp } from "@capacitor/core";
 
@@ -38,7 +46,7 @@ export interface VisionResult {
   action: VisionAction;
   raw?: string; // raw model output, kept for the diagnostics DB
   error?: string; // set when the real call failed and we fell back
-  simulated?: boolean; // true when produced by the keyword mock (no key)
+  method: "cloud" | "on-device"; // cloud vision model, or the free on-device text heuristic
 }
 
 export interface ScreenCapture {
@@ -153,45 +161,94 @@ function parseResult(raw: string): VisionResult | null {
       controls,
       action: normAction(o.action),
       raw,
+      method: "cloud",
     };
   } catch {
     return null;
   }
 }
 
-/** Deterministic keyword classifier — the offline/no-key fallback. */
-function mockClassify(capture: ScreenCapture): VisionResult {
+// ─── On-device heuristic classifier (the free, no-key default) ────────────────
+// Runs on the screen's OCR text (ML Kit on device; the canned `hint` in the web
+// demo). Scores each class by weighted keyword hits so confidence is real, not a
+// flat 0.5, and pulls the chore-control labels (online/offline/stop) out of the
+// text so the coordinator can learn them. idCheck detection is deliberately broad
+// — a missed identity check is the one unsafe outcome — and always wins.
+
+const CLASS_CUES: Array<{ cls: VisionClass; re: RegExp }> = [
+  { cls: "idCheck", re: /selfie|verif|id ?check|real.?time id|face scan|photo of yourself|document scan|hold your (face|phone)|blink|look at the camera/gi },
+  { cls: "appUpdate", re: /update|new version|what.?s new|upgrade|changelog|install now|got it|introducing|we.?ve added|terms|consent|accept & continue/gi },
+  { cls: "offer", re: /\boffer\b|\bfare\b|\baccept\b|pick.?up|drop.?off|\bdecline\b|\bzł\b|\bpln\b|min away|new request/gi },
+  { cls: "trip", re: /navigat|en route|arriv|to destination|start trip|end trip|drop.?off|slide to|complete/gi },
+];
+
+const CONTROL_CUES: Array<{ role: string; re: RegExp }> = [
+  { role: "offline", re: /go offline|stop driving|end (shift|dispatch)/i },
+  { role: "online", re: /go online|start driving|start receiving|you.?re online/i },
+  { role: "stopRequests", re: /stop new requests|stop requests|pause|don.?t send|no new (rides|requests)/i },
+  { role: "accept", re: /\baccept\b/i },
+  { role: "decline", re: /\bdecline\b|\breject\b|\bdismiss\b/i },
+];
+
+function countHits(text: string, re: RegExp): number {
+  const m = text.match(re);
+  return m ? m.length : 0;
+}
+
+function heuristicClassify(capture: ScreenCapture): VisionResult {
   const h = (capture.hint ?? "").toLowerCase();
-  let cls: VisionClass = "unknown";
-  if (/(selfie|verif|id check|real-time id|face|photo of yourself|document scan)/.test(h)) cls = "idCheck";
-  else if (/(update|new version|what.?s new|upgrade|changelog|install now|got it|introducing)/.test(h)) cls = "appUpdate";
-  else if (/(offer|fare|accept|pickup|decline)/.test(h)) cls = "offer";
-  else if (/(trip|navigat|drop.?off|en route|arriving)/.test(h)) cls = "trip";
-  const action: VisionAction = cls === "idCheck" ? "freeze" : cls === "offer" || cls === "trip" ? "none" : "note";
+  const scores = CLASS_CUES.map(({ cls, re }) => ({ cls, hits: countHits(h, re) }));
+  // idCheck outranks everything on any hit (safety); otherwise the strongest cue wins.
+  const idHits = scores.find((s) => s.cls === "idCheck")!.hits;
+  const top = idHits > 0
+    ? { cls: "idCheck" as VisionClass, hits: idHits }
+    : scores.reduce((a, b) => (b.hits > a.hits ? b : a), { cls: "unknown" as VisionClass, hits: 0 });
+
+  const cls = top.hits > 0 ? top.cls : "unknown";
+  // Real confidence: rises with corroborating keyword hits, capped so on-device
+  // never claims certainty a cloud read would. Unknown stays deliberately low.
+  const confidence = cls === "unknown" ? 0.3 : Math.min(0.85, 0.45 + 0.13 * top.hits);
+
+  const controls: VisionControl[] = CONTROL_CUES.filter((c) => c.re.test(h)).map((c) => ({
+    role: c.role,
+    text: (capture.hint ?? "").match(c.re)?.[0],
+  }));
+  const hasChoreControl = controls.some((c) => c.role === "online" || c.role === "offline" || c.role === "stopRequests");
+
+  const action: VisionAction =
+    cls === "idCheck" ? "freeze"
+    : cls === "offer" || cls === "trip" ? "none"
+    : hasChoreControl ? "map-control"
+    : "note";
+
   return {
     class: cls,
-    confidence: 0.5,
-    summary: `Simulated classification: ${cls} (no API key — set one in Settings for real vision)`,
-    controls: [],
+    confidence,
+    summary:
+      cls === "unknown"
+        ? "Read on-device — no familiar cues found; logged for review (add a cloud key for a sharper read)"
+        : `Read on-device: looks like a ${cls} screen`,
+    controls,
     action,
-    simulated: true,
+    method: "on-device",
   };
 }
 
 /**
- * Classify a captured screen. With a key it asks the vision model; with no key,
- * or on any failure, it falls back to the deterministic mock so the flow never
- * dead-ends. The ID-check safety rule is enforced by callers acting on `action`.
+ * Classify a captured screen. The free default is the on-device heuristic; a cloud
+ * key upgrades to the vision model, and on any cloud failure we fall back to the
+ * same on-device read so the flow never dead-ends. The ID-check safety rule is
+ * enforced by callers acting on `action`.
  */
 export async function classifyScreen(capture: ScreenCapture, apiKey?: string): Promise<VisionResult> {
-  if (!apiKey) return mockClassify(capture);
+  if (!apiKey) return heuristicClassify(capture);
   try {
     const raw = await callAnthropic(buildBody(capture), apiKey);
     const parsed = parseResult(raw);
-    if (!parsed) return { ...mockClassify(capture), error: "could not parse model output", raw };
+    if (!parsed) return { ...heuristicClassify(capture), error: "could not parse model output", raw };
     return parsed;
   } catch (e) {
-    return { ...mockClassify(capture), error: e instanceof Error ? e.message : "vision call failed" };
+    return { ...heuristicClassify(capture), error: e instanceof Error ? e.message : "vision call failed" };
   }
 }
 

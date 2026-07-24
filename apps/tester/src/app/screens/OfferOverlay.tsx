@@ -97,11 +97,16 @@ export default function OfferOverlay({ scored, timeLeft, totalTime }: Props) {
             <span style={{ fontFamily: MONO, fontSize: 32, fontWeight: 700, color: vc, lineHeight: 1 }}>
               {money(scored.net)}
             </span>
-            <span style={{ fontSize: 12, color: T.ink3, fontWeight: 500 }}>
-              NET after car costs · fare {money(scored.fare)}
-            </span>
+            <span style={{ fontSize: 12, color: T.ink3, fontWeight: 500 }}>net in pocket</span>
           </div>
-          <div style={{ padding: "0 14px 8px", fontSize: 11.5, color: T.ink2 }}>▸ {scored.reason}</div>
+          {/* honest money trail: what the app shows → tax → car costs → real net */}
+          <div style={{ padding: "2px 14px 0", fontSize: 11, color: T.ink3, fontWeight: 500 }}>
+            {scored.platform} {money(scored.fare)}{" "}
+            <span style={{ color: T.ink2 }}>{scored.tax > 0 ? "net of fee · pre-tax" : "NET · tax incl."}</span>
+            {scored.tax > 0 && <> · −tax {money(scored.tax)}</>} · −car{" "}
+            {money(scored.runningCost + scored.deadheadCost)}
+          </div>
+          <div style={{ padding: "4px 14px 8px", fontSize: 11.5, color: T.ink2 }}>▸ {scored.reason}</div>
 
           {/* countdown bar */}
           <div style={{ height: 4, background: T.border }}>
