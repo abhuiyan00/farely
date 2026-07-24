@@ -160,5 +160,30 @@ trade-off (see [VISION §7](docs/VISION.md) / [permissions & legal](docs/ocr-ove
 - [`docs/SRS.md`](docs/SRS.md) — full requirements + UML (component, class, sequence, state, ER).
 - [`docs/ocr-overlay/`](docs/ocr-overlay/) — the live-capture sub-project (architecture, roadmap, permissions, changelog).
 
+## Technology
+
+**TypeScript** throughout. The **UI tester** (`apps/tester`) is **Vite 6 · React 18 ·
+Tailwind v4**, wrapped around a pure, UI-free decision **engine** (`src/app/lib/`) — the
+offer-scoring math, demand zoning, the multi-app coordinator, and the on-device screen
+heuristic — which the web app renders as a live simulation and the APK runs *unchanged*
+inside a WebView. The **APK** (`apps/android`) is a **Capacitor 7** host plus native
+**Kotlin** (Android accessibility capture, the verdict overlay, the multi-app coordinator)
+around that same web build. **MapLibre GL** draws the demand map. Screen recognition runs
+on-device (Android **ML Kit** OCR + a weighted-keyword classifier); an optional **Anthropic**
+vision path and a **Ticketmaster** live-events feed exist in the code but ship off. Tested
+with **Vitest** and **Playwright**.
+
+## Skills demonstrated
+
+Mobile engineering (Capacitor + native Kotlin, Android accessibility services) · clean
+architecture (one pure, testable domain engine shared by web and native; native code only
+captures and displays) · modelling real economics (platform commission + income-tax
+normalization to true take-home) · privacy-first / on-device design (nothing leaves the
+phone by default; identity-check screens are never captured) · data visualization (a live
+demand map and an honest earnings ledger) · product thinking and technical writing (a VISION
+and a full SRS).
+
 ## License
-[MIT](LICENSE).
+
+**MIT** — see [`LICENSE`](LICENSE). A personal, educational prototype (see the notice at the
+top of this file); not affiliated with any ride-hailing platform.
