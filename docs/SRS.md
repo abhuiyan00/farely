@@ -48,7 +48,7 @@ platform backend/API integration, auto-accept/decline of ride offers.
 ### 1.4 References
 IEEE 830 / ISO-IEC-IEEE 29148; Android `AccessibilityService`; Capacitor 7;
 Ticketmaster Discovery API v2; Anthropic Messages API; fueleconomy.gov REST;
-`docs/VISION.md`; `docs/ocr-overlay/*`; `CLAUDE.md`.
+`docs/VISION.md`; `docs/ocr-overlay/*`.
 
 ### 1.5 Overview
 §2 gives the overall picture and UML models; §3 the numbered functional
